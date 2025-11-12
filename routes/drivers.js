@@ -18,7 +18,8 @@ function stripAuthFields(source) {
 }
 
 router.get('/', async (req, res) => {
-  const list = await Driver.find().lean();
+  // Only fetch drivers added manually by admin (not self-registered)
+  const list = await Driver.find({ isManualEntry: true }).lean();
   res.json(list);
 });
 
@@ -56,7 +57,8 @@ router.post('/', async (req, res) => {
     const driverData = {
       id: nextId,
       ...fields,
-      ...uploadedDocs
+      ...uploadedDocs,
+      isManualEntry: true // Mark as manually added by admin
     };
 
     // Remove base64 data to prevent large document size

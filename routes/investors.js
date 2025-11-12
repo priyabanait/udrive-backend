@@ -44,10 +44,11 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// GET all investors
+// GET all investors (only manual entries for admin panel)
 router.get('/', async (req, res) => {
   try {
-    const list = await Investor.find().lean();
+    // Only fetch investors added manually by admin (not self-registered)
+    const list = await Investor.find({ isManualEntry: true }).lean();
     // Transform _id to id for frontend compatibility
     const transformedList = list.map(investor => ({
       ...investor,
@@ -84,7 +85,8 @@ router.post('/', async (req, res) => {
     // Create investor with uploaded document URLs
     const investorData = {
       ...req.body,
-      ...uploadedDocs
+      ...uploadedDocs,
+      isManualEntry: true // Mark as manually added by admin
     };
 
     // Remove base64 data to prevent large document size

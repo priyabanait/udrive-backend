@@ -28,12 +28,13 @@ const InvestorSchema = new mongoose.Schema({
   panDocument: String,
   bankDocument: String,
   
+  // Admin management fields
+  kycStatus: { type: String, default: 'pending', enum: ['pending', 'verified', 'rejected'] },
+  isManualEntry: { type: Boolean, default: false },
+  password: String, // For investor self-service login
+  
   // Legacy fields
-  documents: [String],
-  kycStatus: String
-  ,
-  // Authentication
-  password: { type: String, required: false }
+  documents: [String]
 }, { timestamps: true });
 
 export default mongoose.models.Investor || mongoose.model('Investor', InvestorSchema);
