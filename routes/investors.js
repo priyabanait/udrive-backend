@@ -1,44 +1,91 @@
 import express from 'express';
 import Investor from '../models/investor.js';
+import InvestorSignup from '../models/investorSignup.js';
 import { uploadToCloudinary } from '../lib/cloudinary.js';
 
 const router = express.Router();
 
-// INVESTOR SIGNUP (plain text password)
+// INVESTOR SIGNUP (plain text password) - Stored in separate collection
 router.post('/signup', async (req, res) => {
   try {
     const { investorName, email, phone, password } = req.body;
     if (!investorName || !phone || !password) {
       return res.status(400).json({ error: 'Name, phone, and password required' });
     }
-    // Check if investor already exists
-    const existing = await Investor.findOne({ phone });
+    // Check if investor already exists in signup collection
+    const existing = await InvestorSignup.findOne({ phone });
     if (existing) {
       return res.status(409).json({ error: 'Investor already exists' });
     }
-    const newInvestor = new Investor({ investorName, email, phone, password });
-    await newInvestor.save();
-    res.status(201).json({ message: 'Signup successful', investorId: newInvestor._id });
+    const newInvestorSignup = new InvestorSignup({ investorName, email, phone, password });
+    await newInvestorSignup.save();
+    res.status(201).json({ message: 'Signup successful', investorId: newInvestorSignup._id });
   } catch (error) {
     res.status(500).json({ error: 'Signup failed', message: error.message });
   }
 });
 
-// INVESTOR LOGIN (plain text password)
+// INVESTOR LOGIN (plain text password) - Check in signup collection
 router.post('/login', async (req, res) => {
   try {
     const { phone, password } = req.body;
     if (!phone || !password) {
       return res.status(400).json({ error: 'Phone and password required' });
     }
-    const investor = await Investor.findOne({ phone });
-    if (!investor) {
+    const investorSignup = await InvestorSignup.findOne({ phone });
+    if (!investorSignup) {
       return res.status(404).json({ error: 'Investor not found' });
     }
-    if (investor.password !== password) {
+    if (investorSignup.password !== password) {
       return res.status(401).json({ error: 'Invalid password' });
     }
-    res.json({ message: 'Login successful', investorId: investor._id });
+    res.json({ message: 'Login successful', investorId: investorSignup._id });
+  } catch (error) {
+    res.status(500).json({ error: 'Login failed', message: error.message });
+  }
+});
+
+// INVESTOR SIGNUP WITH OTP - Stored in separate collection
+router.post('/signup-otp', async (req, res) => {
+  try {
+    const { investorName, email, phone, otp } = req.body;
+    if (!phone || !otp) {
+      return res.status(400).json({ error: 'Phone and OTP required' });
+    }
+    // Check if investor already exists in signup collection
+    const existing = await InvestorSignup.findOne({ phone });
+    if (existing) {
+      return res.status(409).json({ error: 'Investor already exists' });
+    }
+    // Create investor signup with OTP as password
+    const newInvestorSignup = new InvestorSignup({ 
+      investorName: investorName || 'Investor',
+      email: email || '',
+      phone, 
+      password: otp 
+    });
+    await newInvestorSignup.save();
+    res.status(201).json({ message: 'Signup successful', investorId: newInvestorSignup._id });
+  } catch (error) {
+    res.status(500).json({ error: 'Signup failed', message: error.message });
+  }
+});
+
+// INVESTOR LOGIN WITH OTP - Check in signup collection
+router.post('/login-otp', async (req, res) => {
+  try {
+    const { phone, otp } = req.body;
+    if (!phone || !otp) {
+      return res.status(400).json({ error: 'Phone and OTP required' });
+    }
+    const investorSignup = await InvestorSignup.findOne({ phone });
+    if (!investorSignup) {
+      return res.status(404).json({ error: 'Investor not found' });
+    }
+    if (investorSignup.password !== otp) {
+      return res.status(401).json({ error: 'Invalid OTP' });
+    }
+    res.json({ message: 'Login successful', investorId: investorSignup._id });
   } catch (error) {
     res.status(500).json({ error: 'Login failed', message: error.message });
   }
@@ -58,6 +105,18 @@ router.get('/', async (req, res) => {
   } catch (error) {
     console.error('Error fetching investors:', error);
     res.status(500).json({ error: 'Failed to fetch investors', message: error.message });
+  }
+});
+
+// GET investor signup credentials (self-registered)
+router.get('/signup/credentials', async (req, res) => {
+  try {
+    // Fetch all investor signups from separate collection
+    const list = await InvestorSignup.find().select('investorName email phone password status kycStatus signupDate').lean();
+    res.json(list);
+  } catch (error) {
+    console.error('Error fetching investor signup credentials:', error);
+    res.status(500).json({ error: 'Failed to fetch signup credentials', message: error.message });
   }
 });
 

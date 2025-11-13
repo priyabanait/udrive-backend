@@ -18,6 +18,7 @@ import expensesRouter from './expenses.js';
 import staticDriverEnrollmentsRouter from './staticDriverEnrollments.js';
 import staticInvestmentsRouter from './staticInvestments.js';
 import staticVehicleRentSlabsRouter from './staticVehicleRentSlabs.js';
+import staticVehicleDailyRentSlabsRouter from './staticVehicleDailyRentSlabs.js';
 import investmentFDsRouter from './investmentFDs.js';
 import paymentsRouter from './payments.js';
 
@@ -42,6 +43,7 @@ router.use('/expenses', expensesRouter);
 router.use('/static-investments', staticInvestmentsRouter);
 router.use('/static/driver-enrollments', staticDriverEnrollmentsRouter);
 router.use('/static/vehicle-rent-slabs', staticVehicleRentSlabsRouter);
+router.use('/static/vehicle-daily-rent-slabs', staticVehicleDailyRentSlabsRouter);
 router.use('/investment-fds', investmentFDsRouter);
 router.use('/payments', paymentsRouter);
 

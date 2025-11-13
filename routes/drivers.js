@@ -1,6 +1,7 @@
 
 import express from 'express';
 import Driver from '../models/driver.js';
+import DriverSignup from '../models/driverSignup.js';
 // auth middleware not applied; token used only for login
 import { uploadToCloudinary } from '../lib/cloudinary.js';
 
@@ -21,6 +22,18 @@ router.get('/', async (req, res) => {
   // Only fetch drivers added manually by admin (not self-registered)
   const list = await Driver.find({ isManualEntry: true }).lean();
   res.json(list);
+});
+
+// GET signup drivers (self-registered with username/mobile/password)
+router.get('/signup/credentials', async (req, res) => {
+  try {
+    // Fetch all driver signups from separate collection
+    const list = await DriverSignup.find().select('username mobile password status kycStatus signupDate').lean();
+    res.json(list);
+  } catch (error) {
+    console.error('Error fetching signup credentials:', error);
+    res.status(500).json({ message: 'Failed to fetch signup credentials' });
+  }
 });
 
 router.get('/:id', async (req, res) => {

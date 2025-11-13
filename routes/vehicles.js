@@ -56,7 +56,24 @@ router.post('/', async (req, res) => {
       ...body
     };
 
+    // Normalize and coerce basic types
+    vehicleData.registrationNumber = (vehicleData.registrationNumber || '').toString().trim();
+    if (vehicleData.year != null) vehicleData.year = Number(vehicleData.year);
+    if (vehicleData.trafficFine != null) vehicleData.trafficFine = Number(vehicleData.trafficFine);
+
     const documentFields = ['insuranceDoc', 'rcDoc', 'permitDoc', 'pollutionDoc', 'fitnessDoc'];
+    // Newly supported photo fields from UI
+    const photoFields = [
+      'registrationCardPhoto',
+      'roadTaxPhoto',
+      'pucPhoto',
+      'permitPhoto',
+      'carFrontPhoto',
+      'carLeftPhoto',
+      'carRightPhoto',
+      'carBackPhoto',
+      'carFullPhoto'
+    ];
     const uploadedDocs = {};
 
     // Upload documents if provided as base64
@@ -71,6 +88,25 @@ router.post('/', async (req, res) => {
         } catch (uploadErr) {
           console.error(`Failed to upload ${field}:`, uploadErr);
         }
+        // prevent saving raw base64 if present
+        delete vehicleData[field];
+      }
+    }
+
+    // Upload new photo fields if provided as base64
+    for (const field of photoFields) {
+      if (vehicleData[field] && typeof vehicleData[field] === 'string' && vehicleData[field].startsWith('data:')) {
+        try {
+          const result = await uploadToCloudinary(
+            vehicleData[field],
+            `vehicles/${vehicleData.registrationNumber}/${field}`
+          );
+          uploadedDocs[field] = result.secure_url;
+        } catch (uploadErr) {
+          console.error(`Failed to upload ${field}:`, uploadErr);
+        }
+        // prevent saving raw base64 if present
+        delete vehicleData[field];
       }
     }
 
@@ -88,7 +124,10 @@ router.post('/', async (req, res) => {
     res.status(201).json(savedVehicle);
   } catch (err) {
     console.error('Error creating vehicle:', err);
-    res.status(500).json({ message: 'Failed to create vehicle' });
+    if (err && (err.code === 11000 || err.code === '11000')) {
+      return res.status(409).json({ message: 'Duplicate registration number' });
+    }
+    res.status(500).json({ message: err?.message || 'Failed to create vehicle' });
   }
 });
 
@@ -98,7 +137,23 @@ router.put('/:id', async (req, res) => {
     const vehicleId = Number(req.params.id);
     const updates = stripAuthFields(req.body);
 
+    // Normalize/coerce
+    if (updates.registrationNumber) updates.registrationNumber = String(updates.registrationNumber).trim();
+    if (updates.year != null) updates.year = Number(updates.year);
+    if (updates.trafficFine != null) updates.trafficFine = Number(updates.trafficFine);
+
     const documentFields = ['insuranceDoc', 'rcDoc', 'permitDoc', 'pollutionDoc', 'fitnessDoc'];
+    const photoFields = [
+      'registrationCardPhoto',
+      'roadTaxPhoto',
+      'pucPhoto',
+      'permitPhoto',
+      'carFrontPhoto',
+      'carLeftPhoto',
+      'carRightPhoto',
+      'carBackPhoto',
+      'carFullPhoto'
+    ];
     const uploadedDocs = {};
 
     // Upload new documents if base64 data is sent
@@ -110,6 +165,20 @@ router.put('/:id', async (req, res) => {
         } catch (uploadErr) {
           console.error(`Failed to upload ${field}:`, uploadErr);
         }
+        delete updates[field];
+      }
+    }
+
+    // Upload new photo fields if base64 data is sent
+    for (const field of photoFields) {
+      if (updates[field] && typeof updates[field] === 'string' && updates[field].startsWith('data:')) {
+        try {
+          const result = await uploadToCloudinary(updates[field], `vehicles/${vehicleId}/${field}`);
+          uploadedDocs[field] = result.secure_url;
+        } catch (uploadErr) {
+          console.error(`Failed to upload ${field}:`, uploadErr);
+        }
+        delete updates[field];
       }
     }
 
@@ -126,7 +195,10 @@ router.put('/:id', async (req, res) => {
     res.json(vehicle);
   } catch (err) {
     console.error('Error updating vehicle:', err);
-    res.status(500).json({ message: 'Failed to update vehicle' });
+    if (err && (err.code === 11000 || err.code === '11000')) {
+      return res.status(409).json({ message: 'Duplicate registration number' });
+    }
+    res.status(500).json({ message: err?.message || 'Failed to update vehicle' });
   }
 });
 
