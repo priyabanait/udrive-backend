@@ -1,8 +1,13 @@
 import express from 'express';
+import jwt from 'jsonwebtoken';
+import dotenv from 'dotenv';
 import Driver from '../models/driver.js';
 import DriverSignup from '../models/driverSignup.js';
 
+dotenv.config();
+
 const router = express.Router();
+const SECRET = process.env.JWT_SECRET || 'dev_secret';
 
 // Signup (username/password)
 router.post('/signup', async (req, res) => {
@@ -34,7 +39,27 @@ router.post('/signup', async (req, res) => {
 		});
 		await driverSignup.save();
 
-		return res.json({ message: 'Signup successful.' });
+		// Generate JWT token
+		const token = jwt.sign(
+			{ 
+				id: driverSignup._id, 
+				username: driverSignup.username, 
+				mobile: driverSignup.mobile,
+				type: 'driver'
+			}, 
+			SECRET, 
+			{ expiresIn: '30d' }
+		);
+
+		return res.json({ 
+			message: 'Signup successful.',
+			token,
+			driver: {
+				id: driverSignup._id,
+				username: driverSignup.username,
+				mobile: driverSignup.mobile
+			}
+		});
 	} catch (error) {
 		console.error('Signup error:', error);
 		return res.status(500).json({ message: 'Server error during signup.' });
@@ -60,8 +85,21 @@ router.post('/login', async (req, res) => {
 			return res.status(401).json({ message: 'Invalid credentials.' });
 		}
 
+		// Generate JWT token
+		const token = jwt.sign(
+			{ 
+				id: driverSignup._id, 
+				username: driverSignup.username, 
+				mobile: driverSignup.mobile,
+				type: 'driver'
+			}, 
+			SECRET, 
+			{ expiresIn: '30d' }
+		);
+
 		return res.json({ 
 			message: 'Login successful.',
+			token,
 			driver: {
 				id: driverSignup._id,
 				username: driverSignup.username,
@@ -98,7 +136,27 @@ router.post('/signup-otp', async (req, res) => {
 		});
 		await driverSignup.save();
 
-		return res.json({ message: 'Signup successful.' });
+		// Generate JWT token
+		const token = jwt.sign(
+			{ 
+				id: driverSignup._id, 
+				username: driverSignup.username, 
+				mobile: driverSignup.mobile,
+				type: 'driver'
+			}, 
+			SECRET, 
+			{ expiresIn: '30d' }
+		);
+
+		return res.json({ 
+			message: 'Signup successful.',
+			token,
+			driver: {
+				id: driverSignup._id,
+				username: driverSignup.username,
+				mobile: driverSignup.mobile
+			}
+		});
 	} catch (error) {
 		console.error('Signup OTP error:', error);
 		return res.status(500).json({ message: 'Server error during signup.' });
@@ -123,8 +181,21 @@ router.post('/login-otp', async (req, res) => {
 			return res.status(401).json({ message: 'Invalid mobile number or OTP.' });
 		}
 
+		// Generate JWT token
+		const token = jwt.sign(
+			{ 
+				id: driverSignup._id, 
+				username: driverSignup.username, 
+				mobile: driverSignup.mobile,
+				type: 'driver'
+			}, 
+			SECRET, 
+			{ expiresIn: '30d' }
+		);
+
 		return res.json({ 
 			message: 'Login successful.',
+			token,
 			driver: {
 				id: driverSignup._id,
 				username: driverSignup.username,
