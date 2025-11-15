@@ -116,25 +116,32 @@ router.post('/', async (req, res) => {
     }
 
     // Create new investment FD
-    const newInvestment = new InvestmentFD({
-      investorName: investorName.trim(),
-      email: email ? email.trim() : '',
-      phone: phone.trim(),
-      address: address.trim(),
-      investmentDate: new Date(investmentDate),
-      paymentMethod,
-      investmentRate: parseFloat(investmentRate),
-      investmentAmount: parseFloat(investmentAmount),
-      planId: resolvedPlanId,
-      planName: resolvedPlanName,
-      fdType,
-      termMonths: fdType === 'monthly' ? parseInt(termMonths) : undefined,
-      termYears: fdType === 'yearly' ? parseInt(termYears) : undefined,
-      status: status || 'active',
-      kycStatus: kycStatus || 'pending',
-      maturityDate: calculatedMaturityDate,
-      notes: notes || ''
-    });
+      // Calculate maturity amount (simple interest)
+      const principal = parseFloat(investmentAmount);
+      const rate = parseFloat(investmentRate) / 100;
+      const time = fdType === 'monthly' ? parseFloat(termMonths) / 12 : parseFloat(termYears);
+      const maturityAmount = principal + (principal * rate * time);
+
+      const newInvestment = new InvestmentFD({
+        investorName: investorName.trim(),
+        email: email ? email.trim() : '',
+        phone: phone.trim(),
+        address: address.trim(),
+        investmentDate: new Date(investmentDate),
+        paymentMethod,
+        investmentRate: parseFloat(investmentRate),
+        investmentAmount: principal,
+        planId: resolvedPlanId,
+        planName: resolvedPlanName,
+        fdType,
+        termMonths: fdType === 'monthly' ? parseInt(termMonths) : undefined,
+        termYears: fdType === 'yearly' ? parseInt(termYears) : undefined,
+        status: status || 'active',
+        kycStatus: kycStatus || 'pending',
+        maturityDate: calculatedMaturityDate,
+        notes: notes || '',
+        maturityAmount
+      });
 
     const savedInvestment = await newInvestment.save();
     res.status(201).json(savedInvestment);
@@ -231,6 +238,16 @@ router.put('/:id', async (req, res) => {
     if (fdType !== undefined) investment.fdType = fdType;
     if (termMonths !== undefined) investment.termMonths = investment.fdType === 'monthly' ? parseInt(termMonths) : undefined;
     if (termYears !== undefined) investment.termYears = investment.fdType === 'yearly' ? parseInt(termYears) : undefined;
+
+    // Recalculate maturityAmount if relevant fields changed
+    if (
+      investmentAmount !== undefined || investmentRate !== undefined || fdType !== undefined || termMonths !== undefined || termYears !== undefined
+    ) {
+      const principal = investment.investmentAmount;
+      const rate = investment.investmentRate / 100;
+      const time = investment.fdType === 'monthly' ? (investment.termMonths || 0) / 12 : (investment.termYears || 0);
+      investment.maturityAmount = principal + (principal * rate * time);
+    }
 
     // Update plan if provided
     if (planId !== undefined) {

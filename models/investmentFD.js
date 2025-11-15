@@ -80,6 +80,11 @@ const investmentFDSchema = new mongoose.Schema({
     type: String,
     default: ''
   }
+    ,
+    maturityAmount: {
+      type: Number,
+      default: 0
+    }
 }, {
   timestamps: true
 });
