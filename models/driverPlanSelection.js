@@ -26,7 +26,31 @@ const DriverPlanSelectionSchema = new mongoose.Schema({
     type: String, 
     default: 'active', 
     enum: ['active', 'inactive', 'completed', 'cancelled'] 
-  }
+  },
+  paymentStatus: {
+    type: String,
+    enum: ['pending', 'completed', 'failed'],
+    default: 'pending'
+  },
+  paymentDate: {
+    type: Date,
+    default: null
+  },
+  paymentMode: {
+    type: String,
+    enum: ['online', 'cash'],
+    required: false
+  },
+  paymentMethod: {
+    type: String,
+    enum: ['Cash', 'Bank Transfer', 'Cheque', 'Online', 'UPI'],
+    default: 'Cash'
+  },
+  // Calculated payment breakdown stored at creation/update
+  calculatedDeposit: { type: Number, default: 0 },
+  calculatedRent: { type: Number, default: 0 },
+  calculatedCover: { type: Number, default: 0 },
+  calculatedTotal: { type: Number, default: 0 }
 }, { timestamps: true });
 
 // Index for faster queries

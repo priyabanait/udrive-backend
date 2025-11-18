@@ -33,7 +33,30 @@ router.get('/', async (req, res) => {
     const selections = await DriverPlanSelection.find()
       .sort({ selectedDate: -1 })
       .lean();
-    res.json(selections);
+    
+    // Ensure all selections have calculated values
+    const selectionsWithBreakdown = selections.map(s => {
+      const deposit = s.calculatedDeposit || s.securityDeposit || 0;
+      const rent = s.calculatedRent || (() => {
+        const slab = s.selectedRentSlab || {};
+        return s.planType === 'weekly' ? (slab.weeklyRent || 0) : (slab.rentDay || 0);
+      })();
+      const cover = s.calculatedCover || (() => {
+        const slab = s.selectedRentSlab || {};
+        return slab.accidentalCover || 105;
+      })();
+      const total = s.calculatedTotal || (deposit + rent + cover);
+      
+      return {
+        ...s,
+        calculatedDeposit: deposit,
+        calculatedRent: rent,
+        calculatedCover: cover,
+        calculatedTotal: total
+      };
+    });
+    
+    res.json(selectionsWithBreakdown);
   } catch (err) {
     console.error('Get plan selections error:', err);
     res.status(500).json({ message: 'Failed to load plan selections' });
@@ -62,7 +85,32 @@ router.get('/:id', async (req, res) => {
     if (!selection) {
       return res.status(404).json({ message: 'Plan selection not found' });
     }
-    res.json(selection);
+    
+    // Use stored calculated values if available, otherwise calculate
+    const deposit = selection.calculatedDeposit || selection.securityDeposit || 0;
+    const rent = selection.calculatedRent || (() => {
+      const slab = selection.selectedRentSlab || {};
+      return selection.planType === 'weekly' ? (slab.weeklyRent || 0) : (slab.rentDay || 0);
+    })();
+    const cover = selection.calculatedCover || (() => {
+      const slab = selection.selectedRentSlab || {};
+      return slab.accidentalCover || 105;
+    })();
+    const totalAmount = selection.calculatedTotal || (deposit + rent + cover);
+    
+    // Add payment breakdown to response
+    const response = {
+      ...selection,
+      paymentBreakdown: {
+        securityDeposit: deposit,
+        rent: rent,
+        rentType: selection.planType === 'weekly' ? 'weeklyRent' : 'dailyRent',
+        accidentalCover: cover,
+        totalAmount: totalAmount
+      }
+    };
+    
+    res.json(response);
   } catch (err) {
     console.error('Get plan selection error:', err);
     res.status(500).json({ message: 'Failed to load plan selection' });
@@ -96,7 +144,14 @@ router.post('/', authenticateDriver, async (req, res) => {
       await existingSelection.save();
     }
 
-    // Create new selection
+    // Calculate payment breakdown
+    const deposit = securityDeposit || 0;
+    const slab = selectedRentSlab || {};
+    const rent = planType === 'weekly' ? (slab.weeklyRent || 0) : (slab.rentDay || 0);
+    const cover = slab.accidentalCover || 105;
+    const totalAmount = deposit + rent + cover;
+
+    // Create new selection with calculated values
     const selection = new DriverPlanSelection({
       driverSignupId: req.driver.id,
       driverUsername: driver.username,
@@ -104,10 +159,17 @@ router.post('/', authenticateDriver, async (req, res) => {
       planId,
       planName,
       planType,
-      securityDeposit: securityDeposit || 0,
+      securityDeposit: deposit,
       rentSlabs: rentSlabs || [],
       selectedRentSlab: selectedRentSlab || null,
-      status: 'active'
+      status: 'active',
+      paymentStatus: 'pending',
+      paymentMethod: 'Cash',
+      // Store calculated breakdown
+      calculatedDeposit: deposit,
+      calculatedRent: rent,
+      calculatedCover: cover,
+      calculatedTotal: totalAmount
     });
 
     await selection.save();
@@ -119,6 +181,54 @@ router.post('/', authenticateDriver, async (req, res) => {
   } catch (err) {
     console.error('Create plan selection error:', err);
     res.status(500).json({ message: 'Failed to select plan' });
+  }
+});
+
+// POST - Confirm payment for driver plan selection
+router.post('/:id/confirm-payment', async (req, res) => {
+  try {
+    console.log('Confirm driver payment request received:', {
+      id: req.params.id,
+      body: req.body
+    });
+
+    const { paymentMode } = req.body;
+
+    if (!paymentMode || !['online', 'cash'].includes(paymentMode)) {
+      console.log('Invalid payment mode:', paymentMode);
+      return res.status(400).json({ message: 'Invalid payment mode. Must be online or cash' });
+    }
+
+    const selection = await DriverPlanSelection.findById(req.params.id);
+    if (!selection) {
+      console.log('Plan selection not found:', req.params.id);
+      return res.status(404).json({ message: 'Plan selection not found' });
+    }
+
+    console.log('Current payment status:', selection.paymentStatus);
+
+    if (selection.paymentStatus === 'completed') {
+      return res.status(400).json({ message: 'Payment already completed' });
+    }
+
+    selection.paymentMode = paymentMode;
+    selection.paymentStatus = 'completed';
+    selection.paymentDate = new Date();
+
+    const updatedSelection = await selection.save();
+    console.log('Payment confirmed successfully:', {
+      id: updatedSelection._id,
+      paymentMode: updatedSelection.paymentMode,
+      paymentStatus: updatedSelection.paymentStatus
+    });
+
+    res.json({ 
+      message: 'Payment confirmed successfully', 
+      selection: updatedSelection 
+    });
+  } catch (error) {
+    console.error('Error confirming driver payment:', error);
+    res.status(500).json({ message: 'Failed to confirm payment', error: error.message });
   }
 });
 
