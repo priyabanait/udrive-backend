@@ -9,55 +9,6 @@ dotenv.config();
 const router = express.Router();
 const SECRET = process.env.JWT_SECRET || 'dev_secret';
 
-// Check if driver is already registered
-router.post('/check-registration', async (req, res) => {
-	try {
-		const { mobile, username } = req.body;
-		
-		if (!mobile && !username) {
-			return res.status(400).json({ message: 'Mobile or username required.' });
-		}
-
-		// Build query
-		const query = {};
-		if (mobile) query.mobile = mobile;
-		if (username) query.username = username;
-
-		// Check in DriverSignup collection
-		const existingSignup = await DriverSignup.findOne({ $or: [query] });
-		if (existingSignup) {
-			return res.json({ 
-				registered: true,
-				message: 'Driver already registered.',
-				driverToken: existingSignup.driverToken,
-				status: existingSignup.status,
-				kycStatus: existingSignup.kycStatus,
-				mobile: existingSignup.mobile,
-				username: existingSignup.username
-			});
-		}
-
-		// Check in Driver collection
-		const existingDriver = await Driver.findOne({ $or: [query] });
-		if (existingDriver) {
-			return res.json({ 
-				registered: true,
-				message: 'Driver already exists in the system.',
-				mobile: existingDriver.mobile,
-				username: existingDriver.username
-			});
-		}
-
-		return res.json({ 
-			registered: false,
-			message: 'Driver not registered. Can proceed with signup.'
-		});
-	} catch (error) {
-		console.error('Check registration error:', error);
-		return res.status(500).json({ message: 'Server error during registration check.' });
-	}
-});
-
 // Signup (username/password)
 router.post('/signup', async (req, res) => {
 	try {
@@ -69,32 +20,13 @@ router.post('/signup', async (req, res) => {
 		// Check for duplicate username in DriverSignup collection
 		const existingUsername = await DriverSignup.findOne({ username });
 		if (existingUsername) {
-			return res.status(400).json({ 
-				message: 'Driver already registered with this username.',
-				alreadyRegistered: true,
-				driverToken: existingUsername.driverToken
-			});
+			return res.status(400).json({ message: 'Username already exists.' });
 		}
 
 		// Check for duplicate mobile in DriverSignup collection
 		const existingMobile = await DriverSignup.findOne({ mobile });
 		if (existingMobile) {
-			return res.status(400).json({ 
-				message: 'Driver already registered with this mobile number.',
-				alreadyRegistered: true,
-				driverToken: existingMobile.driverToken
-			});
-		}
-
-		// Check in Driver collection as well
-		const existingDriver = await Driver.findOne({ 
-			$or: [{ mobile }, { username }] 
-		});
-		if (existingDriver) {
-			return res.status(400).json({ 
-				message: 'Driver already exists in the system.',
-				alreadyRegistered: true
-			});
+			return res.status(400).json({ message: 'Mobile number already registered.' });
 		}
 
 		// Create new driver signup (password stored in plain text)
@@ -110,8 +42,7 @@ router.post('/signup', async (req, res) => {
 		// Generate JWT token
 		const token = jwt.sign(
 			{ 
-				id: driverSignup._id,
-				driverToken: driverSignup.driverToken,
+				id: driverSignup._id, 
 				username: driverSignup.username, 
 				mobile: driverSignup.mobile,
 				type: 'driver'
@@ -121,15 +52,12 @@ router.post('/signup', async (req, res) => {
 		);
 
 		return res.json({ 
-			message: 'Signup successful. Driver token generated.',
+			message: 'Signup successful.',
 			token,
 			driver: {
 				id: driverSignup._id,
-				driverToken: driverSignup.driverToken,
 				username: driverSignup.username,
-				mobile: driverSignup.mobile,
-				status: driverSignup.status,
-				kycStatus: driverSignup.kycStatus
+				mobile: driverSignup.mobile
 			}
 		});
 	} catch (error) {
@@ -160,8 +88,7 @@ router.post('/login', async (req, res) => {
 		// Generate JWT token
 		const token = jwt.sign(
 			{ 
-				id: driverSignup._id,
-				driverToken: driverSignup.driverToken,
+				id: driverSignup._id, 
 				username: driverSignup.username, 
 				mobile: driverSignup.mobile,
 				type: 'driver'
@@ -175,11 +102,8 @@ router.post('/login', async (req, res) => {
 			token,
 			driver: {
 				id: driverSignup._id,
-				driverToken: driverSignup.driverToken,
 				username: driverSignup.username,
-				mobile: driverSignup.mobile,
-				status: driverSignup.status,
-				kycStatus: driverSignup.kycStatus
+				mobile: driverSignup.mobile
 			}
 		});
 	} catch (error) {
@@ -199,20 +123,7 @@ router.post('/signup-otp', async (req, res) => {
 		// Check for duplicate mobile in DriverSignup collection
 		const existingMobile = await DriverSignup.findOne({ mobile });
 		if (existingMobile) {
-			return res.status(400).json({ 
-				message: 'Driver already registered with this mobile number.',
-				alreadyRegistered: true,
-				driverToken: existingMobile.driverToken
-			});
-		}
-
-		// Check in Driver collection as well
-		const existingDriver = await Driver.findOne({ mobile });
-		if (existingDriver) {
-			return res.status(400).json({ 
-				message: 'Driver already exists in the system.',
-				alreadyRegistered: true
-			});
+			return res.status(400).json({ message: 'Mobile number already registered.' });
 		}
 
 		// Create new driver signup with OTP as password (plain text)
@@ -228,8 +139,7 @@ router.post('/signup-otp', async (req, res) => {
 		// Generate JWT token
 		const token = jwt.sign(
 			{ 
-				id: driverSignup._id,
-				driverToken: driverSignup.driverToken,
+				id: driverSignup._id, 
 				username: driverSignup.username, 
 				mobile: driverSignup.mobile,
 				type: 'driver'
@@ -239,15 +149,12 @@ router.post('/signup-otp', async (req, res) => {
 		);
 
 		return res.json({ 
-			message: 'Signup successful. Driver token generated.',
+			message: 'Signup successful.',
 			token,
 			driver: {
 				id: driverSignup._id,
-				driverToken: driverSignup.driverToken,
 				username: driverSignup.username,
-				mobile: driverSignup.mobile,
-				status: driverSignup.status,
-				kycStatus: driverSignup.kycStatus
+				mobile: driverSignup.mobile
 			}
 		});
 	} catch (error) {
@@ -277,8 +184,7 @@ router.post('/login-otp', async (req, res) => {
 		// Generate JWT token
 		const token = jwt.sign(
 			{ 
-				id: driverSignup._id,
-				driverToken: driverSignup.driverToken,
+				id: driverSignup._id, 
 				username: driverSignup.username, 
 				mobile: driverSignup.mobile,
 				type: 'driver'
@@ -292,11 +198,8 @@ router.post('/login-otp', async (req, res) => {
 			token,
 			driver: {
 				id: driverSignup._id,
-				driverToken: driverSignup.driverToken,
 				username: driverSignup.username,
-				mobile: driverSignup.mobile,
-				status: driverSignup.status,
-				kycStatus: driverSignup.kycStatus
+				mobile: driverSignup.mobile
 			}
 		});
 	} catch (error) {
