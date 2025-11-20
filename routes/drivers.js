@@ -6,6 +6,19 @@ import DriverSignup from '../models/driverSignup.js';
 import { uploadToCloudinary } from '../lib/cloudinary.js';
 
 const router = express.Router();
+// GET driver form data by mobile number
+router.get('/form/mobile/:phone', async (req, res) => {
+  try {
+    const { phone } = req.params;
+    const driver = await Driver.findOne({ phone }).lean();
+    if (!driver) {
+      return res.status(404).json({ error: 'Driver not found' });
+    }
+    res.json({ driver });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch driver', message: error.message });
+  }
+});
 
 // Remove any token/auth-related fields from incoming bodies
 function stripAuthFields(source) {
@@ -80,6 +93,14 @@ router.post('/', async (req, res) => {
         delete driverData[field];
       }
     });
+
+    // Set registrationCompleted=true in DriverSignup if mobile matches
+    if (driverData.mobile) {
+      await DriverSignup.findOneAndUpdate(
+        { mobile: driverData.mobile },
+        { registrationCompleted: true, status: 'active' }
+      );
+    }
 
     const newDriver = await Driver.create(driverData);
     res.status(201).json(newDriver);
