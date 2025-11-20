@@ -9,7 +9,7 @@ const TransactionSchema = new mongoose.Schema({
   description: String,
   driverId: Number,
   vehicleId: Number,
-  investorId: Number
+  investorId: { type: String, required: true } // Changed to String for ObjectId
 }, { timestamps: true, strict: false });
 
 export default mongoose.models.Transaction || mongoose.model('Transaction', TransactionSchema);

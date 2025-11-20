@@ -46,6 +46,18 @@ router.post('/signup', async (req, res) => {
     }
     const newInvestorSignup = new InvestorSignup({ investorName, email, phone, password });
     await newInvestorSignup.save();
+
+    // Create wallet entry for this phone number
+    try {
+      const InvestorWallet = (await import('../models/investorWallet.js')).default;
+      const walletExists = await InvestorWallet.findOne({ phone });
+      if (!walletExists) {
+        await InvestorWallet.create({ phone, balance: 0, transactions: [] });
+      }
+    } catch (walletErr) {
+      console.error('Failed to create wallet for investor:', walletErr);
+    }
+
     res.status(201).json({ 
       message: 'Signup successful', 
       investor: {
