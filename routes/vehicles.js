@@ -330,6 +330,14 @@ router.put('/:id', async (req, res) => {
       }
     }
 
+    // If assignedDriver is being set and not empty, set rentStartDate if not already set
+    if (updates.assignedDriver && updates.assignedDriver !== '') {
+      const existing = await Vehicle.findOne({ vehicleId });
+      if (existing && !existing.rentStartDate) {
+        updates.rentStartDate = new Date();
+      }
+    }
+
     const vehicle = await Vehicle.findOneAndUpdate(
       { vehicleId },
       { ...updates, ...uploadedDocs },
