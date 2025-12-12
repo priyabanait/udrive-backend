@@ -409,7 +409,13 @@ router.get('/by-mobile/:mobile', async (req, res) => {
     const selections = await DriverPlanSelection.find({ driverMobile: mobile })
       .sort({ selectedDate: -1 })
       .lean();
-    res.json(selections);
+    // Ensure each selection includes a `paymentDetails` object (compute if missing)
+    const selectionsWithDetails = selections.map(s => ({
+      ...s,
+      paymentDetails: s.paymentDetails || calculatePaymentDetails(s)
+    }));
+
+    res.json(selectionsWithDetails);
   } catch (err) {
     console.error('Get plans by mobile error:', err);
     res.status(500).json({ message: 'Failed to load plans for this mobile' });
