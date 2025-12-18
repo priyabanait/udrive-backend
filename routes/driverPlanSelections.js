@@ -330,11 +330,24 @@ router.get('/by-manager/:manager', async (req, res) => {
 
     console.log(`Found ${payments.length} payments for manager`);
     
-    // Add calculated payment details to each payment
-    const paymentsWithDetails = payments.map(p => ({
-      ...p,
-      paymentDetails: calculatePaymentDetails(p)
-    }));
+    // Fetch vehicle data for each payment
+    const vehicleIds = [...new Set(payments.map(p => p.vehicleId).filter(Boolean))];
+    const vehiclesForPayments = await Vehicle.find({ vehicleId: { $in: vehicleIds } }).lean();
+    const vehicleMap = {};
+    vehiclesForPayments.forEach(v => {
+      vehicleMap[v.vehicleId] = v;
+    });
+    
+    // Add calculated payment details and vehicle info to each payment
+    const paymentsWithDetails = payments.map(p => {
+      const vehicle = p.vehicleId ? vehicleMap[p.vehicleId] : null;
+      return {
+        ...p,
+        paymentDetails: calculatePaymentDetails(p),
+        vehicleStatus: vehicle?.status || null,
+        vehicleRegistrationNumber: vehicle?.registrationNumber || null
+      };
+    });
     
     res.json(paymentsWithDetails);
   } catch (err) {
@@ -377,12 +390,23 @@ router.get('/', async (req, res) => {
       .limit(limit)
       .lean();
     
-    // Add calculated payment details to each selection
+    // Fetch vehicle data for each selection
+    const vehicleIds = [...new Set(selections.map(s => s.vehicleId).filter(Boolean))];
+    const vehicles = await Vehicle.find({ vehicleId: { $in: vehicleIds } }).lean();
+    const vehicleMap = {};
+    vehicles.forEach(v => {
+      vehicleMap[v.vehicleId] = v;
+    });
+    
+    // Add calculated payment details and vehicle info to each selection
     const selectionsWithBreakdown = selections.map(s => {
       const paymentDetails = calculatePaymentDetails(s);
+      const vehicle = s.vehicleId ? vehicleMap[s.vehicleId] : null;
       return {
         ...s,
-        paymentDetails
+        paymentDetails,
+        vehicleStatus: vehicle?.status || null,
+        vehicleRegistrationNumber: vehicle?.registrationNumber || null
       };
     });
     

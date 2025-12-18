@@ -56,6 +56,11 @@ const DriverPlanSelectionSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  // Date when rent was paused (when vehicle becomes inactive)
+  rentPausedDate: {
+    type: Date,
+    default: null
+  },
   // Convenience field for daily rent amount locked at selection time
   rentPerDay: { type: Number, default: 0 },
   // Calculated payment breakdown stored at creation/update
@@ -78,7 +83,15 @@ const DriverPlanSelectionSchema = new mongoose.Schema({
     amount: { type: Number, required: true },
     reason: { type: String, default: '' },
     date: { type: Date, default: Date.now }
-  }]
+  }],
+  // Admin paid amount (for cash payments)
+  adminPaidAmount: { type: Number, default: 0 },
+  // Track separate payments for deposit and rent
+  depositPaid: { type: Number, default: 0 },
+  rentPaid: { type: Number, default: 0 },
+  // Track payments for extra amount and accidental cover
+  extraAmountPaid: { type: Number, default: 0 },
+  accidentalCoverPaid: { type: Number, default: 0 }
 }, { timestamps: true });
 
 // Index for faster queries
