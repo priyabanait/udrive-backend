@@ -1,6 +1,7 @@
 import express from 'express';
 import axios from 'axios';
 import { Buffer } from 'buffer';
+import crypto from 'crypto';
 import PaymentGatewayConfig from '../models/paymentGatewayConfig.js';
 import Transaction from '../models/transaction.js';
 import DriverPlanSelection from '../models/driverPlanSelection.js';
@@ -175,12 +176,13 @@ async function createPaymentToken(paymentData, config) {
       hasId: !!responseData.id,
       hasMtx: !!responseData.mtx,
       hasEntity: !!responseData.entity,
+      hasPaymentUrl: !!responseData.payment_url,
+      hasUrl: !!responseData.url,
       keys: Object.keys(responseData),
       fullResponse: JSON.stringify(responseData, null, 2)
     });
     
-    // ZWITCH /pgi/payment_token returns: { id: "cs_...", mtx: "...", entity: "payment_token", ... }
-    // The 'id' field contains the payment token
+    // ZWITCH returns: { id: "pt_...", mtx: "...", entity: "payment_token", payment_url: "..." }
     const paymentToken = responseData.id;
     const returnedMtx = responseData.mtx || merchantOrderId;
     
@@ -192,11 +194,18 @@ async function createPaymentToken(paymentData, config) {
     console.log('✅ Payment token extracted:', paymentToken);
     console.log('✅ MTX:', returnedMtx);
     
-    // Build payment URL - using the payment token directly
-    // The payment URL should be constructed based on ZWITCH documentation
-    const paymentUrl = `https://checkout.zwitch.io/payment/${paymentToken}`;
+    // Zwitch may return the payment URL in different fields
+    // Check all possible field names and construct fallback URL
+    const paymentUrl = responseData.payment_url || 
+                      responseData.url || 
+                      responseData.checkout_url ||
+                      responseData.redirect_url ||
+                      // Fallback: construct URL using common patterns
+                      `https://pay.zwitch.io/${paymentToken}` ||
+                      `https://zwitch.io/pay/${paymentToken}`;
     
-    console.log('🔗 Payment URL generated:', paymentUrl);
+    console.log('🔗 Payment URL:', paymentUrl);
+    console.log('🔗 Full response for debugging:', JSON.stringify(responseData, null, 2));
     
     return {
       success: true,
@@ -249,7 +258,6 @@ router.post('/zwitch/create-token', async (req, res) => {
       amount,
       driverName,
       driverEmail,
-      description,
       planSelectionId,
       paymentType // 'rent', 'deposit', 'penalty', etc.
     } = req.body;
@@ -334,7 +342,6 @@ router.post('/zwitch/create-token', async (req, res) => {
       mobile: driverMobile,
       name: driverName || driver.name || 'Driver',
       email: driverEmail || driver.email || `driver${driverMobile}@udrive.com`,
-      description: description || `Payment for ${paymentType || 'service'}`,
       driverId: driver._id?.toString() || driver.id,
       planSelectionId,
       paymentType: paymentType || 'rent'
@@ -390,12 +397,181 @@ router.post('/zwitch/create-token', async (req, res) => {
 });
 
 /**
+ * POST /api/payments/zwitch/create-token-investor
+ * Create payment token to collect payment FROM investor
+ */
+router.post('/zwitch/create-token-investor', async (req, res) => {
+  try {
+    const {
+      investorPhone,
+      amount,
+      investorName,
+      investorEmail,
+      investmentId,
+      paymentType // 'investment', 'deposit', etc.
+    } = req.body;
+
+    // Validation
+    if (!investorPhone || !amount) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields: investorPhone, amount'
+      });
+    }
+
+    if (amount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Amount must be greater than 0'
+      });
+    }
+
+    // Get gateway config (real-time)
+    let config;
+    try {
+      config = await getGatewayConfig();
+    } catch (configError) {
+      console.error('Failed to load gateway config:', configError);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to load payment gateway configuration'
+      });
+    }
+
+    // Check if ZWITCH is enabled
+    if (!config.zwitch || !config.zwitch.enabled) {
+      return res.status(400).json({
+        success: false,
+        message: 'ZWITCH payment gateway is currently disabled'
+      });
+    }
+
+    // Check amount limits
+    const minAmount = config.settings?.minAmount ?? 1;
+    const maxAmount = config.settings?.maxAmount ?? 1000000;
+    if (amount < minAmount || amount > maxAmount) {
+      return res.status(400).json({
+        success: false,
+        message: `Amount must be between ₹${minAmount} and ₹${maxAmount}`
+      });
+    }
+
+    // Find investor by phone number
+    const Investor = (await import('../models/investor.js')).default;
+    let investor = await Investor.findOne({ phone: investorPhone }).lean();
+    
+    if (!investor) {
+      // Try InvestorSignup collection
+      const InvestorSignup = (await import('../models/investorSignup.js')).default;
+      const investorSignup = await InvestorSignup.findOne({ phone: investorPhone }).lean();
+      if (!investorSignup) {
+        return res.status(404).json({
+          success: false,
+          message: `Investor not found with phone number: ${investorPhone}`
+        });
+      }
+      // Use investorSignup data
+      investor = {
+        _id: investorSignup._id,
+        id: investorSignup._id?.toString(),
+        phone: investorSignup.phone,
+        investorName: investorSignup.investorName,
+        email: investorSignup.email
+      };
+    }
+
+    // Prepare payment data
+    const paymentData = {
+      amount,
+      phone: investorPhone,
+      mobile: investorPhone,
+      name: investorName || investor.investorName || 'Investor',
+      email: investorEmail || investor.email || `investor${investorPhone}@udrive.com`,
+      investorId: investor._id?.toString() || investor.id,
+      investmentId,
+      paymentType: paymentType || 'investment'
+    };
+
+    console.log('Creating payment token for investor:', paymentData);
+
+    // Create payment token using ZWITCH PG API
+    const result = await createPaymentToken(paymentData, config);
+
+    // Create transaction record
+    const transaction = new Transaction({
+      type: 'collection',
+      gateway: 'zwitch',
+      amount: amount,
+      status: 'pending',
+      investorId: investor._id,
+      gatewayTransactionId: result.data.merchantOrderId,
+      metadata: {
+        paymentToken: result.data.paymentToken,
+        paymentType: paymentType,
+        merchantOrderId: result.data.merchantOrderId,
+        investmentId,
+        rawResponse: result.data.rawResponse
+      }
+    });
+
+    await transaction.save();
+
+    res.json({
+      success: true,
+      message: 'Payment token created successfully',
+      data: {
+        paymentToken: result.data.paymentToken,
+        paymentUrl: result.data.paymentUrl,
+        merchantOrderId: result.data.merchantOrderId,
+        amount: amount,
+        transactionId: transaction._id,
+        investorName: paymentData.name,
+        investorPhone: paymentData.phone
+      }
+    });
+
+  } catch (error) {
+    console.error('Investor payment token creation error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to create payment token',
+      error: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+});
+
+/**
  * POST /api/payments/zwitch/callback
  * Handle payment callback from ZWITCH after payment completion
  */
 router.post('/zwitch/callback', async (req, res) => {
   try {
-    console.log('ZWITCH Payment Callback:', req.body);
+    console.log('📥 ZWITCH Payment Webhook Received:', req.body);
+    console.log('📥 Headers:', req.headers);
+
+    // Verify webhook signature for security
+    const webhookSecret = process.env.ZWITCH_WEBHOOK_SECRET;
+    if (webhookSecret) {
+      const signature = req.headers['x-zwitch-signature'] || req.headers['zwitch-signature'];
+      
+      if (signature) {
+        const computedSignature = crypto
+          .createHmac('sha256', webhookSecret)
+          .update(JSON.stringify(req.body))
+          .digest('hex');
+        
+        if (signature !== computedSignature) {
+          console.error('⚠️ Invalid webhook signature');
+          return res.status(401).json({
+            success: false,
+            message: 'Invalid signature'
+          });
+        }
+        console.log('✅ Webhook signature verified');
+      } else {
+        console.warn('⚠️ No signature header found in webhook');
+      }
+    }
 
     const {
       merchant_order_id,
@@ -421,6 +597,9 @@ router.post('/zwitch/callback', async (req, res) => {
       });
     }
 
+    // Check if this is an investor or driver payment
+    const isInvestorPayment = transaction.metadata?.investmentId || transaction.metadata?.carInvestmentId;
+
     // Update transaction based on payment status
     if (status === 'captured') {
       transaction.status = 'completed';
@@ -432,19 +611,116 @@ router.post('/zwitch/callback', async (req, res) => {
         callbackData: req.body
       };
 
+      // Handle investor payment
+      if (isInvestorPayment && transaction.investorId) {
+        try {
+          const Investor = (await import('../models/investor.js')).default;
+          const investor = await Investor.findById(transaction.investorId);
+          
+          if (investor) {
+            const InvestorWallet = (await import('../models/investorWallet.js')).default;
+            let wallet = await InvestorWallet.findOne({ phone: investor.phone });
+            
+            if (!wallet) {
+              wallet = new InvestorWallet({ phone: investor.phone, balance: 0, onlinePayments: [] });
+            }
+
+            // Initialize onlinePayments array if it doesn't exist
+            if (!wallet.onlinePayments) {
+              wallet.onlinePayments = [];
+            }
+
+            const paymentAmount = parseFloat(amount);
+
+            // Add to wallet balance (credit)
+            wallet.balance = (wallet.balance || 0) + paymentAmount;
+
+            // Add to transactions array
+            wallet.transactions.push({
+              amount: paymentAmount,
+              description: `Online payment via ZWITCH - ${transaction.metadata?.paymentType || 'investment'}`,
+              type: 'credit',
+              date: new Date()
+            });
+
+            // Add payment record to onlinePayments array
+            wallet.onlinePayments.push({
+              date: new Date(),
+              amount: paymentAmount,
+              mode: 'online',
+              type: transaction.metadata?.paymentType || 'investment',
+              transactionId: payment_id,
+              merchantOrderId: merchant_order_id,
+              paymentToken: payment_token,
+              gateway: 'ZWITCH',
+              status: status,
+              investmentId: transaction.metadata?.investmentId
+            });
+
+            await wallet.save();
+            console.log('✅ Investor wallet updated with online payment:', {
+              investorId: transaction.investorId,
+              amount: paymentAmount,
+              newBalance: wallet.balance,
+              paymentType: transaction.metadata?.paymentType
+            });
+          } else {
+            console.warn('⚠️ Investor not found:', transaction.investorId);
+          }
+        } catch (investorError) {
+          console.error('❌ Error updating investor wallet:', investorError);
+          // Don't fail the webhook if wallet update fails
+        }
+      }
+
       // Update driver plan selection if applicable
       if (planSelectionId) {
-        const planSelection = await DriverPlanSelection.findById(planSelectionId);
-        if (planSelection) {
-          // Add payment to driverPayments array
-          planSelection.driverPayments.push({
-            date: new Date(),
-            amount: parseFloat(amount),
-            mode: 'online',
-            type: paymentType || 'rent',
-            transactionId: payment_id
-          });
-          await planSelection.save();
+        try {
+          const planSelection = await DriverPlanSelection.findById(planSelectionId);
+          if (planSelection) {
+            // Initialize driverPayments array if it doesn't exist
+            if (!planSelection.driverPayments) {
+              planSelection.driverPayments = [];
+            }
+
+            // Update payment details
+            planSelection.paymentMode = 'online';
+            planSelection.paymentMethod = 'ZWITCH';
+            planSelection.paymentStatus = 'completed';
+            planSelection.paymentDate = new Date();
+            planSelection.paymentType = paymentType || 'rent';
+
+            // Add to cumulative paid amount
+            const previousAmount = planSelection.paidAmount || 0;
+            const newPayment = parseFloat(amount);
+            planSelection.paidAmount = previousAmount + newPayment;
+
+            // Add payment record to array
+            planSelection.driverPayments.push({
+              date: new Date(),
+              amount: newPayment,
+              mode: 'online',
+              type: paymentType || 'rent',
+              transactionId: payment_id,
+              merchantOrderId: merchant_order_id,
+              paymentToken: payment_token,
+              gateway: 'ZWITCH',
+              status: status
+            });
+
+            await planSelection.save();
+            console.log('✅ Driver plan selection updated with online payment:', {
+              planSelectionId,
+              amount: newPayment,
+              totalPaid: planSelection.paidAmount,
+              paymentType: paymentType
+            });
+          } else {
+            console.warn('⚠️ Plan selection not found:', planSelectionId);
+          }
+        } catch (planError) {
+          console.error('❌ Error updating plan selection:', planError);
+          // Don't fail the webhook if plan update fails
         }
       }
     } else if (status === 'failed') {

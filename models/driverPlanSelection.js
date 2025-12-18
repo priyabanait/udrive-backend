@@ -91,7 +91,19 @@ const DriverPlanSelectionSchema = new mongoose.Schema({
   rentPaid: { type: Number, default: 0 },
   // Track payments for extra amount and accidental cover
   extraAmountPaid: { type: Number, default: 0 },
-  accidentalCoverPaid: { type: Number, default: 0 }
+  accidentalCoverPaid: { type: Number, default: 0 },
+  // Array to store all driver online payments
+  driverPayments: [{
+    date: { type: Date, default: Date.now },
+    amount: { type: Number, required: true },
+    mode: { type: String, enum: ['online', 'cash'], default: 'online' },
+    type: { type: String, enum: ['rent', 'security', 'deposit'], default: 'rent' },
+    transactionId: { type: String },
+    merchantOrderId: { type: String },
+    paymentToken: { type: String },
+    gateway: { type: String, default: 'ZWITCH' },
+    status: { type: String, enum: ['captured', 'failed', 'cancelled', 'pending'], default: 'captured' }
+  }]
 }, { timestamps: true });
 
 // Index for faster queries

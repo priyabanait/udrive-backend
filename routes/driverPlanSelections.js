@@ -664,6 +664,102 @@ router.post('/:id/confirm-payment', async (req, res) => {
   }
 });
 
+// POST - Update online payment from payment gateway callback
+router.post('/:id/online-payment', async (req, res) => {
+  try {
+    console.log('Online payment update request received:', {
+      id: req.params.id,
+      body: req.body
+    });
+
+    const { 
+      paymentId, 
+      amount, 
+      paymentType, 
+      status,
+      merchantOrderId,
+      paymentToken,
+      gateway
+    } = req.body;
+
+    if (!amount || !paymentId) {
+      return res.status(400).json({ message: 'Payment ID and amount are required' });
+    }
+
+    const id = req.params.id;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid plan selection ID' });
+    }
+
+    const selection = await DriverPlanSelection.findById(id);
+    if (!selection) {
+      console.log('Plan selection not found:', id);
+      return res.status(404).json({ message: 'Plan selection not found' });
+    }
+
+    console.log('Updating plan selection with online payment:', {
+      currentStatus: selection.paymentStatus,
+      currentPaidAmount: selection.paidAmount,
+      newAmount: amount,
+      paymentType: paymentType
+    });
+
+    // Update payment details
+    selection.paymentMode = 'online';
+    selection.paymentMethod = gateway || 'ZWITCH';
+    selection.paymentStatus = status === 'captured' ? 'completed' : 'pending';
+    selection.paymentDate = new Date();
+    selection.paymentType = paymentType || 'rent';
+
+    // Add to existing paid amount (cumulative)
+    const previousAmount = selection.paidAmount || 0;
+    const newPayment = Number(amount);
+    selection.paidAmount = previousAmount + newPayment;
+
+    // Initialize driverPayments array if it doesn't exist
+    if (!selection.driverPayments) {
+      selection.driverPayments = [];
+    }
+
+    // Add payment record to array
+    selection.driverPayments.push({
+      date: new Date(),
+      amount: newPayment,
+      mode: 'online',
+      type: paymentType || 'rent',
+      transactionId: paymentId,
+      merchantOrderId: merchantOrderId,
+      paymentToken: paymentToken,
+      gateway: gateway || 'ZWITCH',
+      status: status
+    });
+
+    const updatedSelection = await selection.save();
+    
+    console.log('Online payment updated successfully:', {
+      id: updatedSelection._id,
+      paymentMode: updatedSelection.paymentMode,
+      paymentStatus: updatedSelection.paymentStatus,
+      paidAmount: updatedSelection.paidAmount,
+      paymentType: updatedSelection.paymentType,
+      totalPayments: updatedSelection.driverPayments?.length || 0
+    });
+
+    res.json({ 
+      success: true,
+      message: 'Online payment recorded successfully', 
+      selection: updatedSelection 
+    });
+  } catch (error) {
+    console.error('Error recording online payment:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to record online payment', 
+      error: error.message 
+    });
+  }
+});
+
 // GET - Daily rent summary from start date till today
 router.get('/:id/rent-summary', async (req, res) => {
   try {
