@@ -664,6 +664,32 @@ router.post('/zwitch/callback', async (req, res) => {
               newBalance: wallet.balance,
               paymentType: transaction.metadata?.paymentType
             });
+
+            // Update InvestmentFD record with payment details
+            if (transaction.metadata?.investmentId) {
+              try {
+                const InvestmentFD = (await import('../models/investmentFD.js')).default;
+                const investment = await InvestmentFD.findById(transaction.metadata.investmentId);
+                
+                if (investment) {
+                  investment.paymentStatus = 'paid';
+                  investment.paymentMode = 'Online';
+                  investment.paymentDate = new Date();
+                  
+                  await investment.save();
+                  console.log('✅ InvestmentFD record updated with online payment:', {
+                    investmentId: transaction.metadata.investmentId,
+                    paymentStatus: 'paid',
+                    paymentMode: 'Online',
+                    paymentDate: new Date()
+                  });
+                } else {
+                  console.warn('⚠️ InvestmentFD not found:', transaction.metadata.investmentId);
+                }
+              } catch (fdError) {
+                console.error('❌ Error updating InvestmentFD record:', fdError);
+              }
+            }
           } else {
             console.warn('⚠️ Investor not found:', transaction.investorId);
           }
