@@ -150,7 +150,7 @@ router.post('/', async (req, res) => {
     const nextId = (max[0]?.id || 0) + 1;
 
     // Handle document uploads to Cloudinary
-    const documentFields = ['profilePhoto', 'licenseDocument', 'aadharDocument', 'aadharDocumentBack', 'panDocument', 'bankDocument', 'electricBillDocument'];
+    const documentFields = ['profilePhoto', 'signature', 'licenseDocument', 'aadharDocument', 'aadharDocumentBack', 'panDocument', 'bankDocument', 'electricBillDocument'];
     const uploadedDocs = {};
 
     for (const field of documentFields) {
@@ -205,7 +205,7 @@ router.put('/:id', async (req, res) => {
     const fields = stripAuthFields(req.body);
 
     // Handle document uploads to Cloudinary
-    const documentFields = ['profilePhoto', 'licenseDocument', 'aadharDocument', 'aadharDocumentBack', 'panDocument', 'bankDocument', 'electricBillDocument'];
+    const documentFields = ['profilePhoto', 'signature', 'licenseDocument', 'aadharDocument', 'aadharDocumentBack', 'panDocument', 'bankDocument', 'electricBillDocument'];
     const uploadedDocs = {};
 
     for (const field of documentFields) {
