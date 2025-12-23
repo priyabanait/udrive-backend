@@ -13,6 +13,8 @@ import vehiclesByInvestorRouter from './vehiclesByInvestor.js';
 import investorsRouter from './investors.js';
 import investorWalletRouter from './investorWallet.js';
 import investorWalletMessageRouter from './investorWalletMessage.js';
+import notificationsRouter from './notifications.js';
+import deviceTokensRouter from './deviceTokens.js';
 import driverPlansRouter from './driverPlans.js';
 import investmentPlansRouter from './investmentPlans.js';
 import transactionsRouter from './transactions.js';
@@ -36,6 +38,7 @@ import paymentsRouter from './payments.js';
 // import carInvestmentsRouter from './carInvestments.js';
 import carInvestmentEntriesRouter from './carInvestmentEntries.js';
 import managersRouter from './managers.js';
+// import debugRouter from './debug.js';
 
 const router = express.Router();
 router.use('/driver-wallet', driverWalletRouter);
@@ -51,6 +54,8 @@ router.use('/vehicles-by-investor', vehiclesByInvestorRouter);
 router.use('/investors', investorsRouter);
 router.use('/investor-wallet', investorWalletRouter);
 router.use('/investor-wallet-message', investorWalletMessageRouter);
+router.use('/notifications', notificationsRouter);
+router.use('/device-tokens', deviceTokensRouter);
 router.use('/driver-plans', driverPlansRouter);
 router.use('/investment-plans', investmentPlansRouter);
 router.use('/transactions', transactionsRouter);
@@ -78,5 +83,7 @@ router.use('/car-investment-entries', carInvestmentEntriesRouter);
 
 // Manager routes
 router.use('/managers', managersRouter);
+// Development/debug helpers (guarded)
+// router.use('/debug', debugRouter);
 
 export default router;

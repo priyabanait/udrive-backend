@@ -103,6 +103,27 @@ router.post('/', authenticateToken, async (req, res) => {
   const nextId = (max[0]?.id || 0) + 1;
   const body = req.body || {};
   const tx = await Transaction.create({ id: nextId, ...body });
+  // Notify dashboard and target related parties when available
+  try {
+    const { createAndEmitNotification } = await import('../lib/notify.js');
+    const payload = {
+      type: 'transaction',
+      title: `Transaction ${tx.id} - ${tx.status || 'new'}`,
+      message: `Amount: ${tx.amount || 0}`,
+      data: { id: tx._id, txId: tx.id }
+    };
+
+    // If this transaction relates to an investor or driver, save recipient info so they get targeted notifications
+    if (tx.investorId) {
+      await createAndEmitNotification({ ...payload, recipientType: 'investor', recipientId: tx.investorId });
+    } else if (tx.driverId) {
+      await createAndEmitNotification({ ...payload, recipientType: 'driver', recipientId: tx.driverId });
+    } else {
+      await createAndEmitNotification(payload);
+    }
+  } catch (err) {
+    console.warn('Notify failed:', err.message);
+  }
   res.status(201).json(tx);
 });
 

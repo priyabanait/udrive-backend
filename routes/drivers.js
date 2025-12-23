@@ -112,7 +112,7 @@ router.get('/signup/credentials', async (req, res) => {
 
     const total = await DriverSignup.countDocuments();
     const list = await DriverSignup.find()
-      .select('username mobile password status kycStatus signupDate')
+      .select('username mobile password status kycStatus signupDate registrationCompleted name profilePhoto signature licenseDocument aadharDocument aadharDocumentBack panDocument bankDocument electricBillDocument')
       .sort({ [sortBy]: sortOrder })
       .skip(skip)
       .limit(limit)
@@ -183,15 +183,55 @@ router.post('/', async (req, res) => {
       }
     });
 
-    // Set registrationCompleted=true in DriverSignup if mobile matches
+    // Set registrationCompleted=true in DriverSignup if mobile matches,
+    // and copy document fields (including signature) from signup if they exist.
     if (driverData.mobile) {
-      await DriverSignup.findOneAndUpdate(
+      const signup = await DriverSignup.findOneAndUpdate(
         { mobile: driverData.mobile },
-        { registrationCompleted: true, status: 'active' }
-      );
+        { registrationCompleted: true, status: 'active' },
+        { new: true }
+      ).lean();
+      const docFields = ['profilePhoto','signature','licenseDocument','aadharDocument','aadharDocumentBack','panDocument','bankDocument','electricBillDocument'];
+      if (signup) {
+        for (const f of docFields) {
+          if (!driverData[f] && signup[f]) {
+            driverData[f] = signup[f];
+          }
+        }
+      }
     }
 
     const newDriver = await Driver.create(driverData);
+    // Notify dashboard - create global notification for admins and targeted for driver
+    try {
+      const { createAndEmitNotification } = await import('../lib/notify.js');
+      // Create notification visible to all admins (no recipientType/recipientId)
+      await createAndEmitNotification({
+        type: 'driver_added',
+        title: `Driver added: ${newDriver.name || newDriver.mobile || newDriver.username || 'N/A'}`,
+        message: `Admin has added a new driver with ID: ${newDriver.id || newDriver._id}`,
+        data: { id: newDriver._id, driverId: newDriver.id, mobile: newDriver.mobile },
+        recipientType: null,
+        recipientId: null
+      });
+      // Also create a targeted notification for the driver if they have a signup account
+      if (newDriver.mobile) {
+        const DriverSignup = (await import('../models/driverSignup.js')).default;
+        const signup = await DriverSignup.findOne({ mobile: newDriver.mobile }).lean();
+        if (signup && signup._id) {
+          await createAndEmitNotification({
+            type: 'driver_added',
+            title: `Your profile has been created`,
+            message: `Admin has created your driver profile. Your ID is ${newDriver.id || newDriver._id}`,
+            data: { id: newDriver._id, driverId: newDriver.id },
+            recipientType: 'driver',
+            recipientId: signup._id
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('Notify failed:', err.message);
+    }
     res.status(201).json(newDriver);
   } catch (err) {
     console.error('Driver create error:', err);
@@ -204,9 +244,19 @@ router.put('/:id', async (req, res) => {
     const id = Number(req.params.id);
     const fields = stripAuthFields(req.body);
 
-    // Handle document uploads to Cloudinary
+    // If signature or document fields are missing, try to copy from corresponding DriverSignup
     const documentFields = ['profilePhoto', 'signature', 'licenseDocument', 'aadharDocument', 'aadharDocumentBack', 'panDocument', 'bankDocument', 'electricBillDocument'];
-    const uploadedDocs = {};
+    if (fields.mobile) {
+      const signup = await DriverSignup.findOne({ mobile: fields.mobile }).lean();
+      if (signup) {
+        for (const f of documentFields) {
+          if (!fields[f] && signup[f]) fields[f] = signup[f];
+        }
+      }
+    }
+
+    // Handle document uploads to Cloudinary
+    const uploadedDocs = {}; 
 
     for (const field of documentFields) {
       if (fields[field] && fields[field].startsWith('data:')) {
@@ -251,6 +301,7 @@ router.put('/:id', async (req, res) => {
     res.status(500).json({ message: 'Failed to update driver', error: err.message });
   }
 });
+
 
 router.delete('/:id', async (req, res) => {
   const id = Number(req.params.id);
