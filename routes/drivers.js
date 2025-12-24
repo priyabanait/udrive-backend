@@ -74,9 +74,11 @@ router.get('/', async (req, res) => {
     const sortBy = req.query.sortBy || 'createdAt';
     const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
 
-    // Only fetch drivers added manually by admin (not self-registered)
-    const filter = { isManualEntry: true };
-    
+    // By default include all drivers (both admin-added and self-registered).
+    // If `manualOnly=true` query param is provided, only return admin-added drivers to preserve legacy behavior.
+    const manualOnly = req.query.manualOnly === 'true';
+    const filter = manualOnly ? { isManualEntry: true } : {};
+
     const total = await Driver.countDocuments(filter);
     const list = await Driver.find(filter)
       .sort({ [sortBy]: sortOrder })

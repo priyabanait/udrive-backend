@@ -5,6 +5,7 @@ import apiRoutes from './routes/api.js';
 import { connectDB, seedDB } from './db.js';
 import http from 'http';
 import { initSocket } from './lib/socket.js';
+import { getFirebaseStatus, isFirebaseInitialized } from './lib/firebaseAdmin.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -29,9 +30,26 @@ async function start() {
     await connectDB();
     await seedDB();
 
+    // Check Firebase initialization status
+    const fbStatus = getFirebaseStatus();
+    if (fbStatus.initialized) {
+      console.log('✅ Firebase Admin initialized successfully');
+      console.log(`   Messaging available: ${fbStatus.messagingAvailable}`);
+      console.log(`   sendMulticast available: ${fbStatus.sendMulticastAvailable}`);
+    } else {
+      console.warn('⚠️ Firebase Admin not initialized - push notifications will be disabled');
+      console.warn('   Set FIREBASE_SERVICE_ACCOUNT_JSON or GOOGLE_APPLICATION_CREDENTIALS to enable');
+    }
+
     // Create HTTP server and attach socket.io
     const server = http.createServer(app);
     initSocket(server);
+
+    // Add Firebase status endpoint
+    app.get('/api/firebase/status', (req, res) => {
+      const status = getFirebaseStatus();
+      res.json(status);
+    });
 
     // ✅ Important: listen on all interfaces
     server.listen(PORT, "0.0.0.0", () => {
