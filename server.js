@@ -14,6 +14,8 @@ const PORT = process.env.PORT || 4000;
 app.use(cors({
   origin: "*", // or "http://192.168.1.57:3000" for your frontend
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+  // Ensure Authorization header is allowed for JWT auth
+  allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
 app.use(express.json({ limit: '50mb' }));
