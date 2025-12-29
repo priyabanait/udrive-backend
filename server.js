@@ -30,6 +30,17 @@ async function start() {
     await connectDB();
     await seedDB();
 
+    // Optional: seed default roles when env flag is set
+    if (process.env.SEED_DEFAULT_ROLES === 'true') {
+      try {
+        console.log('SEED_DEFAULT_ROLES=true — seeding default roles');
+        // run the seed script
+        await import('./scripts/seedRoles.mjs');
+      } catch (err) {
+        console.warn('Failed to seed roles:', err.message || err);
+      }
+    }
+
     // Check Firebase initialization status
     const fbStatus = getFirebaseStatus();
     if (fbStatus.initialized) {

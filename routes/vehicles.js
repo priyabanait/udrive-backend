@@ -530,6 +530,11 @@ router.put('/:id', async (req, res) => {
     // Check if driver assignment is new (driver wasn't assigned before but is now)
     const isNewDriverAssignment = !existing.assignedDriver && updates.assignedDriver;
     
+    // Store driver signup ID for notification after vehicle update
+    let assignedDriverSignupId = null;
+    let assignedDriverName = null;
+    let assignedVehicleInfo = null;
+    
     // If a driver is being assigned for the first time
     if (isNewDriverAssignment) {
       try {
@@ -540,6 +545,7 @@ router.put('/:id', async (req, res) => {
         // Find driver by assigned driver field (could be username, mobile, or ID)
         let driverMobiles = [];
         let driverUsernames = [];
+        let driverSignupIds = []; // Declare outside if block for use later
         
         if (updates.assignedDriver) {
           // If assignedDriver is an ObjectId (Driver._id), try to resolve the Driver first
@@ -575,20 +581,50 @@ router.put('/:id', async (req, res) => {
           }
           
           // Also check DriverSignup collection
-          const driverSignup = await DriverSignup.findOne({
+          let driverSignup = await DriverSignup.findOne({
             $or: [
               { username: updates.assignedDriver },
               { mobile: updates.assignedDriver }
             ]
           }).lean();
           
+          // If assignedDriver is an ObjectId, also try to find by _id directly
+          if (!driverSignup) {
+            try {
+              const mongoose = await import('mongoose');
+              if (mongoose.default.Types.ObjectId.isValid(updates.assignedDriver)) {
+                driverSignup = await DriverSignup.findById(updates.assignedDriver).lean();
+              }
+            } catch (err) {
+              console.warn('Failed to find driverSignup by ObjectId:', err.message);
+            }
+          }
+          
+          // Store driver signup ID and name for notification
+          if (driverSignup) {
+            assignedDriverSignupId = driverSignup._id;
+            assignedDriverName = driverSignup.username || driverSignup.mobile || 'Driver';
+          }
+          
           // Collect signup identifiers (for matching by driverSignupId in selections)
-          const driverSignupIds = [];
           if (driverSignup) {
             if (driverSignup.mobile) driverMobiles.push(driverSignup.mobile);
             if (driverSignup.username) driverUsernames.push(driverSignup.username);
             if (driverSignup._id) driverSignupIds.push(driverSignup._id);
           }
+          
+          // Also try to get driver name from Driver collection if not found in signup
+          if (!assignedDriverName && driver) {
+            assignedDriverName = driver.name || driver.username || driver.mobile || 'Driver';
+          }
+          
+          // Store vehicle info for notification
+          assignedVehicleInfo = {
+            vehicleId: vehicleId,
+            registrationNumber: existing.registrationNumber || updates.registrationNumber || '',
+            model: existing.model || updates.model || '',
+            brand: existing.brand || updates.brand || ''
+          };
           // If assignedDriver looks like an ObjectId string, also include that as candidate signup id (string and ObjectId)
           try {
             const mongoose = await import('mongoose');
@@ -984,6 +1020,31 @@ router.put('/:id', async (req, res) => {
 
     if (!vehicle) {
       return res.status(404).json({ message: 'Vehicle not found' });
+    }
+
+    // Send notification to driver if vehicle was just assigned
+    if (isNewDriverAssignment && assignedDriverSignupId) {
+      try {
+        const { createAndEmitNotification } = await import('../lib/notify.js');
+        const vehicleDetails = `${assignedVehicleInfo.carName ? assignedVehicleInfo.carName + ' ' : ''}${assignedVehicleInfo.model || ''} (${assignedVehicleInfo.registrationNumber || 'N/A'})`.trim();
+        
+        await createAndEmitNotification({
+          type: 'vehicle_assigned',
+          title: `Vehicle Assigned`,
+          message: `A vehicle has been assigned to you: ${vehicleDetails}`,
+          data: { 
+            vehicleId: assignedVehicleInfo.vehicleId,
+            registrationNumber: assignedVehicleInfo.registrationNumber,
+            model: assignedVehicleInfo.model,
+            brand: assignedVehicleInfo.brand
+          },
+          recipientType: 'driver',
+          recipientId: assignedDriverSignupId
+        });
+        console.log(`✅ Notification sent to driver ${assignedDriverSignupId} for vehicle assignment ${assignedVehicleInfo.vehicleId}`);
+      } catch (notifyErr) {
+        console.warn('Failed to send vehicle assignment notification:', notifyErr.message);
+      }
     }
 
     // Include selectionsUpdated so callers can know whether to refresh related plan selections

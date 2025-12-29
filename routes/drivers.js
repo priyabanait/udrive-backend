@@ -223,14 +223,14 @@ router.post('/', async (req, res) => {
         return res.status(404).json({ message: 'Driver not found to update' });
       }
 
-      // Notify the driver that their profile has been completed (if signup exists)
+      // Notify the driver that their registration is pending approval (if signup exists)
       try {
         if (signupDoc && signupDoc._id) {
           const { createAndEmitNotification } = await import('../lib/notify.js');
           await createAndEmitNotification({
             type: 'driver_registration_completed',
-            title: `Your profile is now complete`,
-            message: `Your driver registration has been completed. You may now use the app.`,
+            title: `Registration Submitted`,
+            message: `Your registration is pending approval. We'll notify you once it's reviewed.`,
             data: { id: updated._id, driverId: updated.id },
             recipientType: 'driver',
             recipientId: signupDoc._id
