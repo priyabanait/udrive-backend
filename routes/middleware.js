@@ -21,8 +21,10 @@ export function authenticateToken(req, res, next) {
   if (!token) return res.status(401).json({ message: 'Missing token' });
 
   // Allow a special mock token in development to enable frontend mock auth flows
+  // For convenience in development/testing, map the mock token to a super_admin so
+  // permission-protected endpoints (like updating roles) can be exercised.
   if (token === 'mock') {
-    req.user = { id: 'mock', role: 'dev', email: 'mock@udrive.local' };
+    req.user = { id: 'mock', role: 'super_admin', email: 'mock@udrive.local', permissions: [] };
     return next();
   }
 
