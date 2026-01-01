@@ -2,6 +2,7 @@ import express from 'express';
 import { listNotifications, markAsRead, sendNotificationToAppType, sendNotificationToSpecificUsers } from '../lib/notify.js';
 import Driver from '../models/driver.js';
 import Investor from '../models/investor.js';
+import DeviceToken from '../models/deviceToken.js';
 
 const router = express.Router();
 
@@ -390,6 +391,149 @@ router.post('/admin/send-specific', async (req, res) => {
   } catch (err) {
     console.error('Error in admin send-specific notification:', err);
     res.status(500).json({ message: 'Failed to send notifications', error: err.message });
+  }
+});
+
+/**
+ * Send notification-only push to a driver by mobile number
+ * POST /api/notifications/send-driver-by-mobile
+ * Body:
+ * {
+ *   mobile: '9999999999',
+ *   title: 'Title',
+ *   message: 'Message',
+ *   save: boolean (optional, default false)
+ * }
+ */
+router.post('/send-driver-by-mobile', async (req, res) => {
+  try {
+    const { mobile, title, message, save = false } = req.body || {};
+    if (!mobile) return res.status(400).json({ message: 'mobile is required' });
+    if (!title && !message) return res.status(400).json({ message: 'title or message is required' });
+
+    const normalized = String(mobile).trim();
+    const driver = await Driver.findOne({ mobile: normalized }).lean();
+    if (!driver) return res.status(404).json({ message: 'Driver not found for given mobile' });
+
+    const tokens = await DeviceToken.find({ userType: 'driver', userId: String(driver._id) }).distinct('token');
+    if (!tokens || tokens.length === 0) {
+      if (save) {
+        const { createAndEmitNotification } = await import('../lib/notify.js');
+        await createAndEmitNotification({
+          type: 'mobile_only',
+          title: title || '',
+          message: message || '',
+          data: {},
+          recipientType: 'driver',
+          recipientId: String(driver._id)
+        });
+      }
+      return res.status(200).json({ message: 'No device tokens found for driver', tokensFound: 0 });
+    }
+
+    const payloadTitle = String(title || '').trim();
+    const payloadBody = String(message || '').trim();
+
+    const { sendPushToTokens } = await import('../lib/firebaseAdmin.js');
+    const result = await sendPushToTokens(tokens, { title: payloadTitle, body: payloadBody, data: undefined });
+
+    let savedNote = null;
+    if (save) {
+      const { createAndEmitNotification } = await import('../lib/notify.js');
+      savedNote = await createAndEmitNotification({
+        type: 'mobile_only',
+        title: payloadTitle,
+        message: payloadBody,
+        data: {},
+        recipientType: 'driver',
+        recipientId: String(driver._id)
+      });
+    }
+
+    return res.status(200).json({
+      message: 'Notification sent',
+      recipientType: 'driver',
+      recipientId: String(driver._id),
+      tokensTried: tokens.length,
+      sendResult: result,
+      notification: savedNote
+    });
+
+  } catch (err) {
+    console.error('Error in send-driver-by-mobile:', err);
+    return res.status(500).json({ message: 'Failed to send notification', error: err.message });
+  }
+});
+
+
+/**
+ * Send notification-only push to an investor by mobile number
+ * POST /api/notifications/send-investor-by-mobile
+ * Body:
+ * {
+ *   mobile: '9999999999',
+ *   title: 'Title',
+ *   message: 'Message',
+ *   save: boolean (optional, default false)
+ * }
+ */
+router.post('/send-investor-by-mobile', async (req, res) => {
+  try {
+    const { mobile, title, message, save = false } = req.body || {};
+    if (!mobile) return res.status(400).json({ message: 'mobile is required' });
+    if (!title && !message) return res.status(400).json({ message: 'title or message is required' });
+
+    const normalized = String(mobile).trim();
+    const investor = await Investor.findOne({ phone: normalized }).lean();
+    if (!investor) return res.status(404).json({ message: 'Investor not found for given mobile' });
+
+    const tokens = await DeviceToken.find({ userType: 'investor', userId: String(investor._id) }).distinct('token');
+    if (!tokens || tokens.length === 0) {
+      if (save) {
+        const { createAndEmitNotification } = await import('../lib/notify.js');
+        await createAndEmitNotification({
+          type: 'mobile_only',
+          title: title || '',
+          message: message || '',
+          data: {},
+          recipientType: 'investor',
+          recipientId: String(investor._id)
+        });
+      }
+      return res.status(200).json({ message: 'No device tokens found for investor', tokensFound: 0 });
+    }
+
+    const payloadTitle = String(title || '').trim();
+    const payloadBody = String(message || '').trim();
+
+    const { sendPushToTokens } = await import('../lib/firebaseAdmin.js');
+    const result = await sendPushToTokens(tokens, { title: payloadTitle, body: payloadBody, data: undefined });
+
+    let savedNote = null;
+    if (save) {
+      const { createAndEmitNotification } = await import('../lib/notify.js');
+      savedNote = await createAndEmitNotification({
+        type: 'mobile_only',
+        title: payloadTitle,
+        message: payloadBody,
+        data: {},
+        recipientType: 'investor',
+        recipientId: String(investor._id)
+      });
+    }
+
+    return res.status(200).json({
+      message: 'Notification sent',
+      recipientType: 'investor',
+      recipientId: String(investor._id),
+      tokensTried: tokens.length,
+      sendResult: result,
+      notification: savedNote
+    });
+
+  } catch (err) {
+    console.error('Error in send-investor-by-mobile:', err);
+    return res.status(500).json({ message: 'Failed to send notification', error: err.message });
   }
 });
 

@@ -30,6 +30,8 @@ Endpoints (examples):
 - POST /api/payments/drivers/create
 - PUT /api/payments/drivers/:id
 - DELETE /api/payments/drivers/:id
+- POST /api/notifications/send-driver-by-mobile  { mobile, title, message, save (optional boolean) }  -> Sends a Firebase notification-only push to the given driver by mobile.
+- POST /api/notifications/send-investor-by-mobile  { mobile, title, message, save (optional boolean) }  -> Sends a Firebase notification-only push to the given investor by mobile.
 
 Auth: POST /api/auth/login returns { user, token }. Use `Authorization: Bearer <token>` to call protected endpoints (POST/PUT/DELETE)
 
