@@ -98,6 +98,28 @@ router.post("/", async (req, res) => {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
+    // Normalize investorId - ensure it's either a valid ObjectId or null
+    let normalizedInvestorId = null;
+    if (investorId && String(investorId).trim() !== "") {
+      try {
+        // Try to validate as MongoDB ObjectId
+        const mongooseModule = await import("mongoose");
+        const isValidId =
+          mongooseModule.default.Types.ObjectId.isValid(investorId);
+        if (isValidId) {
+          normalizedInvestorId = investorId;
+        } else {
+          console.warn(
+            `[FD] Invalid investorId format provided: ${investorId}`
+          );
+        }
+      } catch (e) {
+        console.warn(`[FD] Error validating investorId: ${e.message}`);
+      }
+    }
+
+    console.log("[FD] Normalized investorId:", normalizedInvestorId);
+
     // Validate FD type
     if (!["monthly", "yearly"].includes(fdType)) {
       return res
@@ -221,7 +243,7 @@ router.post("/", async (req, res) => {
     });
 
     const newInvestment = new InvestmentFD({
-      investorId: investorId || null,
+      investorId: normalizedInvestorId,
       investorName: investorName.trim(),
       email: email ? email.trim() : "",
       phone: phone.trim(),
@@ -245,24 +267,41 @@ router.post("/", async (req, res) => {
     });
 
     const savedInvestment = await newInvestment.save();
+    console.log(
+      "[FD] Created FD with investorId:",
+      savedInvestment.investorId,
+      "Type:",
+      typeof savedInvestment.investorId
+    );
     // Emit dashboard notification for new investment FD
     try {
       const { createAndEmitNotification } = await import("../lib/notify.js");
-      await createAndEmitNotification({
-        type: "new_fd",
-        title: `New FD created - ${
-          savedInvestment.investorName || savedInvestment.phone
-        }`,
-        message: `FD of ₹${savedInvestment.investmentAmount} created.`,
-        data: {
-          id: savedInvestment._id,
-          investorId: savedInvestment.investorId,
-        },
-        recipientType: "investor",
-        recipientId: savedInvestment.investorId
-          ? String(savedInvestment.investorId)
-          : null,
-      });
+      console.log(
+        "[FD] About to send notification with recipientId:",
+        savedInvestment.investorId
+      );
+
+      // Ensure notification is sent with proper investorId
+      if (savedInvestment.investorId) {
+        await createAndEmitNotification({
+          type: "new_fd",
+          title: `New FD created - ${
+            savedInvestment.investorName || savedInvestment.phone
+          }`,
+          message: `FD of ₹${savedInvestment.investmentAmount} created.`,
+          data: {
+            id: savedInvestment._id,
+            investorId: savedInvestment.investorId,
+          },
+          recipientType: "investor",
+          recipientId: savedInvestment.investorId
+            ? String(savedInvestment.investorId)
+            : null,
+        });
+        console.log("[FD] Notification sent successfully");
+      } else {
+        console.warn("[FD] No investorId - skipping targeted notification");
+      }
     } catch (err) {
       console.warn("Notify failed:", err.message);
     }
