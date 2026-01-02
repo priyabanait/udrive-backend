@@ -828,7 +828,7 @@ router.post("/public", async (req, res) => {
     try {
       const { createAndEmitNotification } = await import("../lib/notify.js");
       const amount = selection.calculatedTotal || 0;
-      // Notify driver if signup exists
+      // Notify driver signup if signup exists (use distinct recipientType so we don't send to real driver app tokens)
       if (driverSignup && driverSignup._id) {
         await createAndEmitNotification({
           type: "driver_booking",
@@ -841,7 +841,7 @@ router.post("/public", async (req, res) => {
             planName: selection.planName,
             amount,
           },
-          recipientType: "driver",
+          recipientType: "driver_signup",
           recipientId: String(selection.driverSignupId),
         });
       }
@@ -960,7 +960,7 @@ router.post("/", authenticateDriver, async (req, res) => {
           planName: selection.planName,
           amount,
         },
-        recipientType: "driver",
+        recipientType: "driver_signup",
         recipientId: String(selection.driverSignupId),
       });
       // Also create a global/admin notification so admins see new bookings

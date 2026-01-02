@@ -501,7 +501,8 @@ router.post("/", async (req, res) => {
             message: `Your registration is pending approval. We'll notify you once it's reviewed.`,
             data: { id: updated._id, driverId: updated.id },
             recipientType: "driver",
-            recipientId: signupDoc._id,
+            // Use the actual Driver _id so FCM finds the correct device tokens
+            recipientId: String(updated._id),
           });
         }
       } catch (err) {
@@ -546,7 +547,8 @@ router.post("/", async (req, res) => {
           }`,
           data: { id: created._id, driverId: created.id },
           recipientType: "driver",
-          recipientId: signupDoc._id,
+          // Use the actual newly-created Driver _id so FCM targets the correct device tokens
+          recipientId: String(created._id),
         });
       }
     } catch (err) {

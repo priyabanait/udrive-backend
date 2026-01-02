@@ -109,6 +109,7 @@ router.post("/signup", async (req, res) => {
     // Emit a welcome notification (no pending approval message yet - that comes after registration completion)
     try {
       const { createAndEmitNotification } = await import("../lib/notify.js");
+      // Use a distinct recipientType for signup records so we don't accidentally push to investor app tokens
       await createAndEmitNotification({
         type: "investor_signup",
         title: `Welcome, ${
@@ -116,8 +117,8 @@ router.post("/signup", async (req, res) => {
         }`,
         message:
           "Your investor account has been created. Please complete your registration.",
-        recipientType: "investor",
-        recipientId: newInvestorSignup._id,
+        recipientType: "investor_signup",
+        recipientId: String(newInvestorSignup._id),
         data: { id: newInvestorSignup._id, phone: newInvestorSignup.phone },
       });
     } catch (err) {
@@ -225,6 +226,7 @@ router.post("/signup-otp", async (req, res) => {
     // Emit notification for new investor signup (no pending approval message yet - that comes after registration completion)
     try {
       const { createAndEmitNotification } = await import("../lib/notify.js");
+      // Use a distinct recipientType for signup records so we don't accidentally push to investor app tokens
       await createAndEmitNotification({
         type: "investor_signup",
         title: `New investor signed up: ${investorName || phone}`,
@@ -232,8 +234,8 @@ router.post("/signup-otp", async (req, res) => {
           investorName || phone
         } has signed up via OTP. Please complete registration to proceed.`,
         data: { id: newInvestorSignup._id, phone: newInvestorSignup.phone },
-        recipientType: "investor",
-        recipientId: newInvestorSignup._id,
+        recipientType: "investor_signup",
+        recipientId: String(newInvestorSignup._id),
       });
     } catch (err) {
       console.warn("Notify failed:", err.message);
@@ -505,7 +507,8 @@ router.post("/", async (req, res) => {
           message: `Your registration is pending approval. We'll notify you once it's reviewed.`,
           data: { id: savedInvestor._id, phone: updated.phone },
           recipientType: "investor",
-          recipientId: investorSignup._id,
+          // Use the actual saved Investor _id so FCM can target device tokens correctly
+          recipientId: String(savedInvestor._id),
         });
       } catch (err) {
         console.warn("Notify failed:", err.message);
@@ -747,12 +750,33 @@ router.post("/fd-records/:id", async (req, res) => {
     // Emit dashboard notification for new FD creation
     try {
       const { createAndEmitNotification } = await import("../lib/notify.js");
+      // Dashboard/admin notification (no recipientType) so admins see all FDs
       await createAndEmitNotification({
         type: "new_fd",
         title: `New FD created - ${savedFD.investorName || savedFD.phone}`,
         message: `An FD of ₹${savedFD.investmentAmount} was created.`,
         data: { id: savedFD._id, investorId: savedFD.investorId },
       });
+
+      // If this FD maps to a registered Investor app user, notify them directly via FCM
+      try {
+        const InvestorModel = (await import("../models/investor.js")).default;
+        const targetInvestor = await InvestorModel.findOne({ phone: String(savedFD.phone) }).lean();
+        if (targetInvestor && targetInvestor._id) {
+          await createAndEmitNotification({
+            type: "new_fd",
+            title: `Your FD is confirmed`,
+            message: `Your FD of ₹${savedFD.investmentAmount} has been created.`,
+            data: { id: savedFD._id, investorId: String(targetInvestor._id) },
+            recipientType: "investor",
+            recipientId: String(targetInvestor._id),
+          });
+        } else {
+          console.log("[FD] No registered Investor found by phone - skipping per-user FCM push");
+        }
+      } catch (innerErr) {
+        console.warn("Notify (per-investor) failed:", innerErr.message);
+      }
     } catch (err) {
       console.warn("Notify failed:", err.message);
     }
