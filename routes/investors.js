@@ -40,12 +40,10 @@ router.put("/signup/credentials/:id", async (req, res) => {
     res.json(updated);
   } catch (err) {
     console.error("Error updating investor signup:", err);
-    res
-      .status(400)
-      .json({
-        message: "Failed to update investor signup",
-        error: err.message,
-      });
+    res.status(400).json({
+      message: "Failed to update investor signup",
+      error: err.message,
+    });
   }
 });
 
@@ -60,12 +58,10 @@ router.delete("/signup/credentials/:id", async (req, res) => {
     res.json({ message: "Investor signup deleted", investor: deleted });
   } catch (err) {
     console.error("Error deleting investor signup:", err);
-    res
-      .status(400)
-      .json({
-        message: "Failed to delete investor signup",
-        error: err.message,
-      });
+    res.status(400).json({
+      message: "Failed to delete investor signup",
+      error: err.message,
+    });
   }
 });
 // GET investor form data by investor ID
@@ -375,12 +371,10 @@ router.get("/signup/credentials", async (req, res) => {
     });
   } catch (error) {
     console.error("Error fetching investor signup credentials:", error);
-    res
-      .status(500)
-      .json({
-        error: "Failed to fetch signup credentials",
-        message: error.message,
-      });
+    res.status(500).json({
+      error: "Failed to fetch signup credentials",
+      message: error.message,
+    });
   }
 });
 
@@ -745,8 +739,23 @@ router.post("/fd-records/:id", async (req, res) => {
 
     const savedFD = await newFD.save();
     // Emit dashboard notification for new FD creation
+    console.log(
+      "[FD-INVESTORS] FD saved with investorId:",
+      savedFD.investorId,
+      "Type:",
+      typeof savedFD.investorId
+    );
     try {
       const { createAndEmitNotification } = await import("../lib/notify.js");
+      console.log(
+        "[FD-INVESTORS] About to call createAndEmitNotification with:"
+      );
+      console.log({
+        type: "new_fd",
+        recipientType: "investor",
+        recipientId: savedFD.investorId,
+        recipientIdType: typeof savedFD.investorId,
+      });
       await createAndEmitNotification({
         type: "new_fd",
         title: `New FD created - ${savedFD.investorName || savedFD.phone}`,
@@ -755,6 +764,7 @@ router.post("/fd-records/:id", async (req, res) => {
         recipientType: "investor",
         recipientId: savedFD.investorId,
       });
+      console.log("[FD-INVESTORS] Notification sent successfully");
     } catch (err) {
       console.warn("Notify failed:", err.message);
     }

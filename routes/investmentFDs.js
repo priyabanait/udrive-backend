@@ -268,7 +268,7 @@ router.post("/", async (req, res) => {
 
     const savedInvestment = await newInvestment.save();
     console.log(
-      "[FD] Created FD with investorId:",
+      "[FD-INVESTMENTFDS] FD saved with investorId:",
       savedInvestment.investorId,
       "Type:",
       typeof savedInvestment.investorId
@@ -277,12 +277,21 @@ router.post("/", async (req, res) => {
     try {
       const { createAndEmitNotification } = await import("../lib/notify.js");
       console.log(
-        "[FD] About to send notification with recipientId:",
+        "[FD-INVESTMENTFDS] About to send notification with recipientId:",
         savedInvestment.investorId
       );
 
       // Ensure notification is sent with proper investorId
       if (savedInvestment.investorId) {
+        console.log(
+          "[FD-INVESTMENTFDS] Calling createAndEmitNotification with:"
+        );
+        console.log({
+          type: "new_fd",
+          recipientType: "investor",
+          recipientId: savedInvestment.investorId,
+          recipientIdType: typeof savedInvestment.investorId,
+        });
         await createAndEmitNotification({
           type: "new_fd",
           title: `New FD created - ${
@@ -298,9 +307,11 @@ router.post("/", async (req, res) => {
             ? String(savedInvestment.investorId)
             : null,
         });
-        console.log("[FD] Notification sent successfully");
+        console.log("[FD-INVESTMENTFDS] Notification sent successfully");
       } else {
-        console.warn("[FD] No investorId - skipping targeted notification");
+        console.warn(
+          "[FD-INVESTMENTFDS] No investorId - skipping targeted notification"
+        );
       }
     } catch (err) {
       console.warn("Notify failed:", err.message);
