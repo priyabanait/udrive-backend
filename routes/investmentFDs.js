@@ -37,12 +37,10 @@ router.get("/", async (req, res) => {
     });
   } catch (error) {
     console.error("Error fetching investment FDs:", error);
-    res
-      .status(500)
-      .json({
-        error: "Failed to fetch investment FDs",
-        message: error.message,
-      });
+    res.status(500).json({
+      error: "Failed to fetch investment FDs",
+      message: error.message,
+    });
   }
 });
 
@@ -261,7 +259,9 @@ router.post("/", async (req, res) => {
           investorId: savedInvestment.investorId,
         },
         recipientType: "investor",
-        recipientId: savedInvestment.investorId,
+        recipientId: savedInvestment.investorId
+          ? String(savedInvestment.investorId)
+          : null,
       });
     } catch (err) {
       console.warn("Notify failed:", err.message);
@@ -269,12 +269,10 @@ router.post("/", async (req, res) => {
     res.status(201).json(savedInvestment);
   } catch (error) {
     console.error("Error creating investment FD:", error);
-    res
-      .status(500)
-      .json({
-        error: "Failed to create investment FD",
-        message: error.message,
-      });
+    res.status(500).json({
+      error: "Failed to create investment FD",
+      message: error.message,
+    });
   }
 });
 
@@ -492,12 +490,10 @@ router.put("/:id", async (req, res) => {
     res.json(updatedInvestment);
   } catch (error) {
     console.error("Error updating investment FD:", error);
-    res
-      .status(500)
-      .json({
-        error: "Failed to update investment FD",
-        message: error.message,
-      });
+    res.status(500).json({
+      error: "Failed to update investment FD",
+      message: error.message,
+    });
   }
 });
 
@@ -511,12 +507,10 @@ router.delete("/:id", async (req, res) => {
     res.json({ message: "Investment FD deleted successfully", investment });
   } catch (error) {
     console.error("Error deleting investment FD:", error);
-    res
-      .status(500)
-      .json({
-        error: "Failed to delete investment FD",
-        message: error.message,
-      });
+    res.status(500).json({
+      error: "Failed to delete investment FD",
+      message: error.message,
+    });
   }
 });
 
