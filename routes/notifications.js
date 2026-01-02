@@ -537,4 +537,60 @@ router.post('/send-investor-by-mobile', async (req, res) => {
   }
 });
 
+/**
+ * Get notifications for a driver by mobile number
+ * GET /api/notifications/by-driver-mobile?mobile=9999999999
+ */
+router.get('/by-driver-mobile', async (req, res) => {
+  try {
+    const { mobile } = req.query;
+    if (!mobile) return res.status(400).json({ message: 'mobile query parameter is required' });
+
+    const normalized = String(mobile).trim();
+    const driver = await Driver.findOne({ mobile: normalized }).lean();
+    if (!driver) return res.status(404).json({ message: 'Driver not found for given mobile' });
+
+    const page = parseInt(req.query.page) || 1;
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    const result = await listNotifications({ page, limit, driverId: String(driver._id) });
+
+    if (result && result.items) {
+      res.json(result);
+    } else {
+      res.json({ items: [], pagination: { total: 0, page, limit, totalPages: 0 } });
+    }
+  } catch (err) {
+    console.error('Error in by-driver-mobile:', err);
+    res.status(500).json({ message: 'Failed to fetch notifications', error: err.message });
+  }
+});
+
+/**
+ * Get notifications for an investor by mobile number
+ * GET /api/notifications/by-investor-mobile?mobile=9999999999
+ */
+router.get('/by-investor-mobile', async (req, res) => {
+  try {
+    const { mobile } = req.query;
+    if (!mobile) return res.status(400).json({ message: 'mobile query parameter is required' });
+
+    const normalized = String(mobile).trim();
+    const investor = await Investor.findOne({ phone: normalized }).lean();
+    if (!investor) return res.status(404).json({ message: 'Investor not found for given mobile' });
+
+    const page = parseInt(req.query.page) || 1;
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    const result = await listNotifications({ page, limit, investorId: String(investor._id) });
+
+    if (result && result.items) {
+      res.json(result);
+    } else {
+      res.json({ items: [], pagination: { total: 0, page, limit, totalPages: 0 } });
+    }
+  } catch (err) {
+    console.error('Error in by-investor-mobile:', err);
+    res.status(500).json({ message: 'Failed to fetch notifications', error: err.message });
+  }
+});
+
 export default router;

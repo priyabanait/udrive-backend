@@ -1,9 +1,13 @@
 
 import express from 'express';
+import multer from 'multer';
+import xlsx from 'xlsx';
 import Driver from '../models/driver.js';
 import DriverSignup from '../models/driverSignup.js';
 // auth middleware not applied; token used only for login
 import { uploadToCloudinary } from '../lib/cloudinary.js';
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 const router = express.Router();
 
@@ -143,6 +147,169 @@ router.get('/:id', async (req, res) => {
   res.json(item);
 });
 
+
+// Import drivers from a spreadsheet (Excel or CSV)
+router.post('/import', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
+
+    const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
+    const sheetNames = workbook.SheetNames || [];
+    let created = 0; let updated = 0; let skipped = 0;
+
+    const normalizePhone = (p) => {
+      if (!p && p !== 0) return undefined;
+      const s = String(p).replace(/\D/g, '').trim();
+      return s === '' ? undefined : s;
+    };
+
+    const normalizeText = (t) => (t === undefined || t === null) ? undefined : String(t).toString().trim();
+
+    const preview = req.query && req.query.preview === 'true';
+    const perRow = [];
+
+    for (const name of sheetNames) {
+      const sheet = workbook.Sheets[name];
+      if (!sheet) continue;
+
+      // Use header:1 to get raw arrays and detect header row flexibly
+      const rows = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+      if (!rows || rows.length === 0) continue;
+
+      // Find header row: first row with >=2 non-empty cells
+      let headerRowIndex = rows.findIndex(r => Array.isArray(r) && r.filter(c => String(c).trim() !== '').length >= 2);
+      if (headerRowIndex < 0) { skipped += rows.length; continue; }
+
+      const headers = rows[headerRowIndex].map(h => String(h).trim());
+      const dataRows = rows.slice(headerRowIndex + 1);
+
+      const normalizeKey = (k) => String(k || '').trim().toLowerCase();
+
+      const makeMap = (row) => {
+        const map = {};
+        for (let i = 0; i < headers.length; i++) {
+          const hk = normalizeKey(headers[i]);
+          map[hk] = row[i] !== undefined && row[i] !== null ? row[i] : '';
+        }
+        return map;
+      };
+
+      const firstOf = (map, choices) => {
+        for (const c of choices) {
+          const v = map[normalizeKey(c)];
+          if (v !== undefined && String(v).trim() !== '') return String(v).trim();
+        }
+        return undefined;
+      };
+
+      for (let rowIndex = 0; rowIndex < dataRows.length; rowIndex++) {
+        const r = dataRows[rowIndex];
+        if (!Array.isArray(r)) continue;
+        const rowMap = makeMap(r);
+
+        const nameV = firstOf(rowMap, ['name', 'full name', 'driver name']);
+        const emailV = firstOf(rowMap, ['email', 'e-mail', 'email address']);
+        const mobileRaw = firstOf(rowMap, ['mobile', 'phone', 'mobile no', 'contact', 'phone number']);
+        const mobileV = normalizePhone(mobileRaw);
+        const aadharV = firstOf(rowMap, ['aadhar', 'aadhaar', 'aadhar no']);
+        const panV = firstOf(rowMap, ['pan', 'pan no']);
+        const licenseV = firstOf(rowMap, ['license no', 'license number']);
+        const empIdV = firstOf(rowMap, ['employee id', 'emp id']);
+
+        if (!nameV && !mobileV && !emailV && !aadharV) { skipped++; perRow.push({ rowIndex, reason: 'no identifiers' }); continue; }
+
+        // Build search conditions (try multiple fallbacks for phone)
+        const conditions = [];
+        if (mobileV) {
+          const last10 = mobileV.slice(-10);
+          conditions.push({ mobile: mobileV });
+          conditions.push({ phone: mobileV });
+          if (last10.length >= 6) {
+            conditions.push({ mobile: { $regex: `${last10}$` } });
+            conditions.push({ phone: { $regex: `${last10}$` } });
+          }
+        }
+        if (aadharV) conditions.push({ aadharNumber: normalizeText(aadharV) });
+        if (panV) conditions.push({ panNumber: normalizeText(panV).toUpperCase() });
+        if (emailV) conditions.push({ email: String(emailV).toLowerCase() });
+        if (empIdV) conditions.push({ employeeId: normalizeText(empIdV) });
+
+        const max = await Driver.find().sort({ id: -1 }).limit(1).lean();
+        const nextId = (max[0]?.id || 0) + 1;
+
+        const payload = {
+          name: normalizeText(nameV) || undefined,
+          email: emailV ? String(emailV).toLowerCase() : undefined,
+          mobile: mobileV || undefined,
+          aadharNumber: aadharV ? String(aadharV).trim() : undefined,
+          panNumber: panV ? String(panV).trim().toUpperCase() : undefined,
+          licenseNumber: licenseV ? String(licenseV).trim() : undefined,
+          employeeId: empIdV ? String(empIdV).trim() : undefined,
+          isManualEntry: true,
+          registrationCompleted: true
+        };
+
+        // Try to find an existing driver using any condition
+        let existing = null;
+        if (conditions.length > 0) {
+          existing = await Driver.findOne({ $or: conditions }).lean();
+        }
+
+        const rowResult = { rowIndex, name: payload.name || null, mobile: payload.mobile || null, email: payload.email || null, aadhar: payload.aadharNumber || null };
+
+        if (preview) {
+          rowResult.found = !!existing;
+          if (existing) {
+            // try detect matchedBy
+            const last10 = mobileV ? mobileV.slice(-10) : null;
+            if (mobileV && (existing.mobile === mobileV || existing.phone === mobileV || (last10 && (String(existing.mobile || '').endsWith(last10) || String(existing.phone || '').endsWith(last10))))) rowResult.matchedBy = 'mobile';
+            else if (aadharV && existing.aadharNumber === String(aadharV).trim()) rowResult.matchedBy = 'aadhar';
+            else if (emailV && existing.email === String(emailV).toLowerCase()) rowResult.matchedBy = 'email';
+            else if (empIdV && existing.employeeId === String(empIdV).trim()) rowResult.matchedBy = 'employeeId';
+            else rowResult.matchedBy = 'unknown';
+          }
+          perRow.push(rowResult);
+        } else {
+          if (existing) {
+            try {
+              await Driver.findByIdAndUpdate(existing._id, { $set: payload }, { new: true });
+              updated++;
+            } catch (err) {
+              console.warn('Failed to update driver', err.message);
+              skipped++;
+              rowResult.error = err.message;
+              perRow.push(rowResult);
+            }
+          } else {
+            const createPayload = { id: nextId, ...payload };
+            try {
+              await Driver.create(createPayload);
+              created++;
+              perRow.push({ ...rowResult, created: true });
+            } catch (err) {
+              console.warn('Failed to create driver for row', err.message);
+              skipped++;
+              rowResult.error = err.message;
+              perRow.push(rowResult);
+            }
+          }
+        }
+      }
+    }
+
+    if (preview) {
+      return res.json({ message: 'Preview completed', sheetNames, results: perRow, created, updated, skipped });
+    }
+
+    if (created === 0 && updated === 0 && skipped > 0) {
+      return res.status(400).json({ message: 'No parsable data found in file sheets', sheetNames, created, updated, skipped });
+    }
+    return res.json({ message: 'Import completed', created, updated, skipped });
+  } catch (err) {
+    console.error('Import failed:', err);
+    res.status(500).json({ message: 'Import failed', error: err.message });
+  }
+});
 
 // Create new driver with document uploads (or complete registration for existing driver)
 router.post('/', async (req, res) => {
