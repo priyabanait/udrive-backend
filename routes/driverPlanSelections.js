@@ -1079,7 +1079,18 @@ router.post("/:id/confirm-payment", async (req, res) => {
     try {
       const { createAndEmitNotification } = await import("../lib/notify.js");
       const paymentAmount = paidAmount || updatedSelection.paidAmount || 0;
-      const recipientId = String(updatedSelection.driverSignupId || "");
+      // Try to find Driver document to use its _id for notifications (device tokens are registered with Driver._id)
+      let recipientId = String(updatedSelection.driverSignupId || "");
+      if (updatedSelection.driverSignupId) {
+        const driverSignup = await DriverSignup.findById(updatedSelection.driverSignupId).lean();
+        if (driverSignup && driverSignup.mobile) {
+          const driver = await Driver.findOne({ mobile: driverSignup.mobile }).lean();
+          if (driver) {
+            recipientId = String(driver._id);
+            console.log(`[NOTIFY] Using Driver._id ${recipientId} for notification (from driverSignupId ${updatedSelection.driverSignupId})`);
+          }
+        }
+      }
       // Notify driver
       await createAndEmitNotification({
         type: "driver_payment",
@@ -1089,7 +1100,7 @@ router.post("/:id/confirm-payment", async (req, res) => {
         )} received from you via ${updatedSelection.paymentMode || "cash"}`,
         data: {
           selectionId: updatedSelection._id,
-          driverSignupId: recipientId,
+          driverSignupId: String(updatedSelection.driverSignupId || ""),
           amount: paymentAmount,
           paymentType: paymentType || "rent",
           paymentMode: updatedSelection.paymentMode || "cash",
@@ -1222,7 +1233,18 @@ router.post("/:id/online-payment", async (req, res) => {
     // Emit notification for driver payment
     try {
       const { createAndEmitNotification } = await import("../lib/notify.js");
-      const recipientId = String(selection.driverSignupId || "");
+      // Try to find Driver document to use its _id for notifications (device tokens are registered with Driver._id)
+      let recipientId = String(selection.driverSignupId || "");
+      if (selection.driverSignupId) {
+        const driverSignup = await DriverSignup.findById(selection.driverSignupId).lean();
+        if (driverSignup && driverSignup.mobile) {
+          const driver = await Driver.findOne({ mobile: driverSignup.mobile }).lean();
+          if (driver) {
+            recipientId = String(driver._id);
+            console.log(`[NOTIFY] Using Driver._id ${recipientId} for notification (from driverSignupId ${selection.driverSignupId})`);
+          }
+        }
+      }
       // Notify driver
       await createAndEmitNotification({
         type: "driver_payment",
@@ -1232,7 +1254,7 @@ router.post("/:id/online-payment", async (req, res) => {
         )} received from you via ${gateway || "ZWITCH"}`,
         data: {
           selectionId: updatedSelection._id,
-          driverSignupId: recipientId,
+          driverSignupId: String(selection.driverSignupId || ""),
           amount: newPayment,
           paymentType: paymentType || "rent",
           paymentMode: "online",
