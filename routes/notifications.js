@@ -8,8 +8,36 @@ import {
 import Driver from "../models/driver.js";
 import Investor from "../models/investor.js";
 import DeviceToken from "../models/deviceToken.js";
+import Notification from "../models/notification.js";
 
 const router = express.Router();
+
+/**
+ * DEBUG endpoint - List all notifications in database
+ * GET /api/notifications/debug/all
+ */
+router.get("/debug/all", async (req, res) => {
+  try {
+    const allNotifs = await Notification.find()
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .lean();
+    res.json({
+      total: await Notification.countDocuments(),
+      count: allNotifs.length,
+      notifications: allNotifs.map((n) => ({
+        _id: n._id,
+        type: n.type,
+        title: n.title?.substring(0, 50),
+        recipientType: n.recipientType,
+        recipientId: n.recipientId,
+        createdAt: n.createdAt,
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 router.get("/", async (req, res) => {
   try {
@@ -138,12 +166,10 @@ router.post("/investor/:investorId/read-all", async (req, res) => {
     res.json({ message: "All notifications marked as read", result });
   } catch (err) {
     console.error("Error marking investor notifications as read:", err);
-    res
-      .status(500)
-      .json({
-        message: "Failed to mark notifications as read",
-        error: err.message,
-      });
+    res.status(500).json({
+      message: "Failed to mark notifications as read",
+      error: err.message,
+    });
   }
 });
 
@@ -168,12 +194,10 @@ router.post("/driver/:driverId/read-all", async (req, res) => {
     res.json({ message: "All notifications marked as read", result });
   } catch (err) {
     console.error("Error marking driver notifications as read:", err);
-    res
-      .status(500)
-      .json({
-        message: "Failed to mark notifications as read",
-        error: err.message,
-      });
+    res.status(500).json({
+      message: "Failed to mark notifications as read",
+      error: err.message,
+    });
   }
 });
 
@@ -216,12 +240,10 @@ router.post("/:id/read", async (req, res) => {
     res.json(updated);
   } catch (err) {
     console.error("Error marking notification as read:", err);
-    res
-      .status(500)
-      .json({
-        message: "Failed to mark notification as read",
-        error: err.message,
-      });
+    res.status(500).json({
+      message: "Failed to mark notification as read",
+      error: err.message,
+    });
   }
 });
 
@@ -260,11 +282,9 @@ router.post("/admin/send", async (req, res) => {
     }
 
     if (sendType === "schedule" && !scheduledTime) {
-      return res
-        .status(400)
-        .json({
-          message: 'scheduledTime is required when sendType is "schedule"',
-        });
+      return res.status(400).json({
+        message: 'scheduledTime is required when sendType is "schedule"',
+      });
     }
 
     if (!data || (!data.common && !data.driver && !data.investor)) {
@@ -524,11 +544,9 @@ router.post("/admin/send-specific", async (req, res) => {
     }
 
     if (sendType === "schedule" && !scheduledTime) {
-      return res
-        .status(400)
-        .json({
-          message: 'scheduledTime is required when sendType is "schedule"',
-        });
+      return res.status(400).json({
+        message: 'scheduledTime is required when sendType is "schedule"',
+      });
     }
 
     const notificationData = {
@@ -732,12 +750,10 @@ router.post("/send-investor-by-mobile", async (req, res) => {
           recipientId: String(investor._id),
         });
       }
-      return res
-        .status(200)
-        .json({
-          message: "No device tokens found for investor",
-          tokensFound: 0,
-        });
+      return res.status(200).json({
+        message: "No device tokens found for investor",
+        tokensFound: 0,
+      });
     }
 
     const payloadTitle = String(title || "").trim();
