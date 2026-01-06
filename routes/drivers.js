@@ -5,6 +5,7 @@ import Driver from "../models/driver.js";
 import DriverSignup from "../models/driverSignup.js";
 // auth middleware not applied; token used only for login
 import { uploadToCloudinary } from "../lib/cloudinary.js";
+import { normalizeToDateOnly } from "../lib/dateUtils.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -54,11 +55,55 @@ router.get("/form/mobile/:phone", async (req, res) => {
     if (!driver) {
       return res.status(404).json({ error: "Driver not found" });
     }
+    // Normalize joinDate on read
+    driver.joinDate = normalizeToDateOnly(driver.joinDate) || (driver.createdAt ? new Date(driver.createdAt).toISOString().split('T')[0] : undefined);
     res.json({ driver });
   } catch (error) {
     res
       .status(500)
       .json({ error: "Failed to fetch driver", message: error.message });
+  }
+});
+
+// GET driver form data by phone/mobile or other identifier (flexible search)
+router.get("/form/search/:q", async (req, res) => {
+  try {
+    const { q } = req.params;
+    if (!q) return res.status(400).json({ error: 'Query is required' });
+
+    // If the query looks like a phone, try numeric matching and last-10 fallback
+    const normalized = String(q).replace(/\D/g, '').trim();
+    const last10 = normalized.slice(-10);
+
+    // Build OR conditions for different identifier types
+    const ors = [];
+    if (normalized) {
+      ors.push({ mobile: normalized });
+      ors.push({ phone: normalized });
+      if (last10.length >= 6) {
+        ors.push({ mobile: { $regex: `${last10}$` } });
+        ors.push({ phone: { $regex: `${last10}$` } });
+      }
+    }
+
+    // Non-numeric identifiers
+    const qNormalized = String(q).trim();
+    ors.push({ driverNo: qNormalized });
+    ors.push({ udbId: qNormalized });
+    ors.push({ employeeId: qNormalized });
+    ors.push({ aadharNumber: qNormalized });
+    ors.push({ panNumber: qNormalized.toUpperCase() });
+    ors.push({ email: qNormalized.toLowerCase() });
+
+    const driver = await Driver.findOne({ $or: ors }).lean();
+
+    if (!driver) return res.status(404).json({ error: 'Driver not found' });
+    // Normalize joinDate on read
+    driver.joinDate = normalizeToDateOnly(driver.joinDate) || (driver.createdAt ? new Date(driver.createdAt).toISOString().split('T')[0] : undefined);
+    res.json({ driver });
+  } catch (err) {
+    console.error('Driver search failed:', err.message);
+    res.status(500).json({ error: 'Failed to search driver', message: err.message });
   }
 });
 
@@ -96,11 +141,17 @@ router.get("/", async (req, res) => {
     const filter = manualOnly ? { isManualEntry: true } : {};
 
     const total = await Driver.countDocuments(filter);
-    const list = await Driver.find(filter)
+    let list = await Driver.find(filter)
       .sort({ [sortBy]: sortOrder })
       .skip(skip)
       .limit(limit)
       .lean();
+
+    // Normalize joinDate for list responses (don't mutate original too much)
+    list = list.map(item => ({
+      ...item,
+      joinDate: normalizeToDateOnly(item.joinDate) || (item.createdAt ? new Date(item.createdAt).toISOString().split('T')[0] : undefined)
+    }));
 
     res.json({
       data: list,
@@ -160,7 +211,29 @@ router.get("/:id", async (req, res) => {
   const id = Number(req.params.id);
   const item = await Driver.findOne({ id }).lean();
   if (!item) return res.status(404).json({ message: "Driver not found" });
+  item.joinDate = normalizeToDateOnly(item.joinDate) || (item.createdAt ? new Date(item.createdAt).toISOString().split('T')[0] : undefined);
   res.json(item);
+});
+
+// Return the next UDB number to use (e.g., { next: 31, nextUdb: 'UDB0031' })
+router.get('/udb/next', async (req, res) => {
+  try {
+    // find all drivers with udbId that match UDB followed by digits
+    const docs = await Driver.find({ udbId: { $exists: true, $ne: null, $regex: '^UDB\\d+$' } }).select('udbId').lean();
+    let maxNum = 0;
+    for (const d of docs) {
+      const m = String(d.udbId).replace(/^UDB0*/, '').replace(/^UDB/, '');
+      const n = parseInt(m, 10);
+      if (!isNaN(n) && n > maxNum) maxNum = n;
+    }
+    const defaultStart = 30;
+    const next = maxNum === 0 ? defaultStart : maxNum + 1;
+    const nextUdb = `UDB${String(next).padStart(4, '0')}`;
+    res.json({ next, nextUdb });
+  } catch (err) {
+    console.error('Failed to compute next UDB:', err);
+    res.status(500).json({ error: 'Failed to compute next UDB' });
+  }
 });
 
 // Import drivers from a spreadsheet (Excel or CSV)
@@ -250,6 +323,17 @@ router.post("/import", upload.single("file"), async (req, res) => {
         const panV = firstOf(rowMap, ["pan", "pan no"]);
         const licenseV = firstOf(rowMap, ["license no", "license number"]);
         const empIdV = firstOf(rowMap, ["employee id", "emp id"]);
+        const joinV = firstOf(rowMap, ["join date", "joined", "joining date", "joindate", "join"]);
+        const dobV = firstOf(rowMap, ["dob", "date of birth", "dateofbirth"]);
+        const licenseExpiryV = firstOf(rowMap, ["license expiry", "license expiry date", "license expirydate"]);
+        const licenseClassV = firstOf(rowMap, ["license class", "licence class"]);
+        const planV = firstOf(rowMap, ["plan", "plan type", "current plan"]);
+        const experienceV = firstOf(rowMap, ["experience", "driving experience"]);
+        const vehicleV = firstOf(rowMap, ["vehicle", "vehicle preference", "vehicle type"]);
+        const udbV = firstOf(rowMap, ["udb id", "udb", "udb_id"]);
+        const driverNoV = firstOf(rowMap, ["driver no", "driver no.", "driver number", "driver_no"]);
+        const altNoV = firstOf(rowMap, ["alternate no", "alternate number", "alt no", "alternate_no", "alternative no", "alternative number"]);
+        const depositV = firstOf(rowMap, ["deposit", "deposite", "deposit amount"]);
 
         if (!nameV && !mobileV && !emailV && !aadharV) {
           skipped++;
@@ -277,6 +361,22 @@ router.post("/import", upload.single("file"), async (req, res) => {
         const max = await Driver.find().sort({ id: -1 }).limit(1).lean();
         const nextId = (max[0]?.id || 0) + 1;
 
+        // Try to parse dates from strings or Date objects into YYYY-MM-DD
+        const parseDateValue = (v) => {
+          if (!v && v !== 0) return undefined;
+          if (v instanceof Date && !isNaN(v.getTime())) return v.toISOString().split('T')[0];
+          const s = String(v).trim();
+          const d = new Date(s);
+          if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+          const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+          if (m) {
+            const [_, dd, mm, yyyy] = m;
+            const dt = new Date(`${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`);
+            if (!isNaN(dt.getTime())) return dt.toISOString().split('T')[0];
+          }
+          return undefined;
+        };
+
         const payload = {
           name: normalizeText(nameV) || undefined,
           email: emailV ? String(emailV).toLowerCase() : undefined,
@@ -284,9 +384,21 @@ router.post("/import", upload.single("file"), async (req, res) => {
           aadharNumber: aadharV ? String(aadharV).trim() : undefined,
           panNumber: panV ? String(panV).trim().toUpperCase() : undefined,
           licenseNumber: licenseV ? String(licenseV).trim() : undefined,
+          licenseExpiryDate: normalizeToDateOnly(licenseExpiryV),
+          dateOfBirth: normalizeToDateOnly(dobV),
+          joinDate: normalizeToDateOnly(joinV) || new Date().toISOString().split('T')[0],
+          licenseClass: licenseClassV ? String(licenseClassV).trim() : undefined,
+          planType: planV ? String(planV).trim() : undefined,
+          experience: experienceV ? String(experienceV).trim() : undefined,
+          vehiclePreference: vehicleV ? String(vehicleV).trim() : undefined,
+          udbId: udbV ? String(udbV).trim() : undefined,
+          driverNo: driverNoV ? String(driverNoV).trim() : undefined,
+          alternateNo: altNoV ? String(altNoV).trim() : undefined,
+          deposit: depositV ? (Number(String(depositV).replace(/[^0-9\.-]+/g, '')) || undefined) : undefined,
           employeeId: empIdV ? String(empIdV).trim() : undefined,
           isManualEntry: true,
-          registrationCompleted: true,
+          registrationCompleted: false,
+          vehicleAssigned: '',
         };
 
         // Try to find an existing driver using any condition
@@ -301,6 +413,10 @@ router.post("/import", upload.single("file"), async (req, res) => {
           mobile: payload.mobile || null,
           email: payload.email || null,
           aadhar: payload.aadharNumber || null,
+          udbId: payload.udbId || null,
+          driverNo: payload.driverNo || null,
+          alternateNo: payload.alternateNo || null,
+          deposit: payload.deposit || null
         };
 
         if (preview) {
@@ -444,6 +560,7 @@ router.post("/", async (req, res) => {
       ...fields,
       ...uploadedDocs,
       emergencyRelation: fields.emergencyRelation || "",
+      emergencyRelationSecondary: fields.emergencyRelationSecondary || "",
       emergencyPhoneSecondary: fields.emergencyPhoneSecondary || "",
     };
 
@@ -479,37 +596,43 @@ router.post("/", async (req, res) => {
         isManualEntry: signupDoc ? false : existingDriver.isManualEntry,
       };
 
-      const updated = await Driver.findOneAndUpdate(
-        { mobile: baseData.mobile },
-        updateData,
-        { new: true }
-      ).lean();
+      // Normalize joinDate if present in update
+      if (updateData.joinDate) updateData.joinDate = normalizeToDateOnly(updateData.joinDate) || updateData.joinDate;
 
-      if (!updated) {
-        return res.status(404).json({ message: "Driver not found to update" });
-      }
-
-      // Notify the driver that their registration is pending approval (if signup exists)
       try {
-        if (signupDoc && signupDoc._id) {
-          const { createAndEmitNotification } = await import(
-            "../lib/notify.js"
-          );
-          await createAndEmitNotification({
-            type: "driver_registration_completed",
-            title: `Registration Submitted`,
-            message: `Your registration is pending approval. We'll notify you once it's reviewed.`,
-            data: { id: updated._id, driverId: updated.id },
-            recipientType: "driver",
-            // Use the actual Driver _id so FCM finds the correct device tokens
-            recipientId: String(updated._id),
-          });
-        }
-      } catch (err) {
-        console.warn("Notify failed:", err.message);
-      }
+        const updated = await Driver.findOneAndUpdate(
+          { mobile: baseData.mobile },
+          updateData,
+          { new: true }
+        ).lean();
 
-      return res.json(updated);
+        if (!updated) {
+          return res.status(404).json({ message: "Driver not found to update" });
+        }
+
+        // Notify the driver that their registration is pending approval (if signup exists)
+        if (signupDoc && signupDoc._id) {
+          try {
+            const { createAndEmitNotification } = await import("../lib/notify.js");
+            await createAndEmitNotification({
+              type: "driver_registration_completed",
+              title: `Registration Submitted`,
+              message: `Your registration is pending approval. We'll notify you once it's reviewed.`,
+              data: { id: updated._id, driverId: updated.id },
+              recipientType: "driver",
+              // Use the actual Driver _id so FCM finds the correct device tokens
+              recipientId: String(updated._id),
+            });
+          } catch (err) {
+            console.warn("Notify failed:", err.message);
+          }
+        }
+
+        return res.json(updated);
+      } catch (err) {
+        console.warn("Failed to update driver", err.message);
+        return res.status(500).json({ message: "Failed to update driver", error: err.message });
+      }
     }
 
     // Otherwise create a new driver (admin flow)
@@ -519,6 +642,9 @@ router.post("/", async (req, res) => {
       isManualEntry: signupDoc ? false : true,
       registrationCompleted: true,
     };
+
+    // Normalize joinDate if present
+    driverData.joinDate = normalizeToDateOnly(driverData.joinDate) || new Date().toISOString().split('T')[0];
 
     const created = await Driver.create(driverData);
 
@@ -622,6 +748,7 @@ router.put("/:id", async (req, res) => {
       ...fields,
       ...uploadedDocs,
       emergencyRelation: fields.emergencyRelation || "",
+      emergencyRelationSecondary: fields.emergencyRelationSecondary || "",
       emergencyPhoneSecondary: fields.emergencyPhoneSecondary || "",
     };
 
@@ -631,6 +758,9 @@ router.put("/:id", async (req, res) => {
         delete updateData[field];
       }
     });
+
+    // Normalize joinDate if present
+    if (updateData.joinDate) updateData.joinDate = normalizeToDateOnly(updateData.joinDate) || updateData.joinDate;
 
     const updated = await Driver.findOneAndUpdate({ id }, updateData, {
       new: true,

@@ -512,6 +512,26 @@ router.put("/:id", async (req, res) => {
       investment.paymentDate = paymentDate ? new Date(paymentDate) : null;
     if (paymentMode !== undefined) investment.paymentMode = paymentMode;
 
+    // Handle TDS percent if provided (calculate tdsAmount server-side to avoid tampering)
+    if (req.body.tdsPercent !== undefined) {
+      const tdsPercent = Number(req.body.tdsPercent) || 0;
+      if (tdsPercent < 0 || tdsPercent > 100) {
+        return res.status(400).json({ error: 'Invalid tdsPercent value' });
+      }
+      investment.tdsPercent = tdsPercent;
+
+      // Compute tdsAmount from maturity interest (maturityAmount - investmentAmount)
+      const interest = (investment.maturityAmount || 0) - (investment.investmentAmount || 0);
+      const tdsAmount = Math.round(((interest * tdsPercent) / 100 + Number.EPSILON) * 100) / 100;
+      investment.tdsAmount = tdsAmount;
+    }
+
+    // If payment status changed to paid and tdsPercent exists but tdsAmount is not set, compute it
+    if (investment.paymentStatus === 'paid' && (investment.tdsPercent || 0) > 0 && (!investment.tdsAmount || investment.tdsAmount === 0)) {
+      const interest = (investment.maturityAmount || 0) - (investment.investmentAmount || 0);
+      investment.tdsAmount = Math.round(((interest * investment.tdsPercent) / 100 + Number.EPSILON) * 100) / 100;
+    }
+
     // Recalculate maturity date if investment date or term changed
     if (
       (investmentDate !== undefined ||
@@ -609,6 +629,17 @@ router.post("/:id/confirm-payment", async (req, res) => {
     investment.paymentMode = mapping[normalized];
     investment.paymentStatus = "paid";
     investment.paymentDate = new Date();
+
+    // Support optional tdsPercent in confirm-payment (server calculates tdsAmount)
+    if (req.body.tdsPercent !== undefined) {
+      const tdsPercent = Number(req.body.tdsPercent) || 0;
+      if (tdsPercent < 0 || tdsPercent > 100) {
+        return res.status(400).json({ error: 'Invalid tdsPercent value' });
+      }
+      investment.tdsPercent = tdsPercent;
+      const interest = (investment.maturityAmount || 0) - (investment.investmentAmount || 0);
+      investment.tdsAmount = Math.round(((interest * tdsPercent) / 100 + Number.EPSILON) * 100) / 100;
+    }
 
     const updatedInvestment = await investment.save();
     console.log("Payment confirmed successfully:", {
