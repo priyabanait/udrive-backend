@@ -51,14 +51,24 @@ router.delete("/signup/credentials/:id", async (req, res) => {
 router.get("/form/mobile/:phone", async (req, res) => {
   try {
     const { phone } = req.params;
-    const driver = await Driver.findOne({ phone }).lean();
+    
+    // ✅ FIX: Check both 'phone' and 'mobile' fields since drivers can have either
+    const driver = await Driver.findOne({
+      $or: [{ phone }, { mobile: phone }]
+    }).lean();
+    
     if (!driver) {
+      console.log(`❌ Driver not found for phone/mobile: ${phone}`);
       return res.status(404).json({ error: "Driver not found" });
     }
+    
+    console.log(`✅ Driver found: ${driver._id} (username: ${driver.username || 'N/A'})`);
+    
     // Normalize joinDate on read
     driver.joinDate = normalizeToDateOnly(driver.joinDate) || (driver.createdAt ? new Date(driver.createdAt).toISOString().split('T')[0] : undefined);
     res.json({ driver });
   } catch (error) {
+    console.error('Error fetching driver by mobile:', error);
     res
       .status(500)
       .json({ error: "Failed to fetch driver", message: error.message });
