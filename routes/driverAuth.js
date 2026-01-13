@@ -237,19 +237,10 @@ router.post("/login-otp", async (req, res) => {
       return res.status(401).json({ message: "Invalid mobile number or OTP." });
     }
 
-    // ✅ CRITICAL FIX: Find the actual Driver record by mobile
-    // This ensures notifications work correctly since FCM tokens are registered with Driver._id
-    const driver = await Driver.findOne({ mobile });
-    const actualDriverId = driver ? driver._id : driverSignup._id;
-
-    console.log('[LOGIN] DriverSignup._id:', driverSignup._id);
-    console.log('[LOGIN] Driver._id:', actualDriverId);
-    console.log('[LOGIN] Using Driver._id for token and response');
-
-    // Generate JWT token with DRIVER._id (not DriverSignup._id)
+    // Generate JWT token
     const token = jwt.sign(
       {
-        id: actualDriverId,  // ✅ Use Driver._id for notifications to work
+        id: driverSignup._id,
         username: driverSignup.username,
         mobile: driverSignup.mobile,
         type: "driver",
@@ -262,7 +253,7 @@ router.post("/login-otp", async (req, res) => {
       message: "Login successful.",
       token,
       driver: {
-        id: actualDriverId,  // ✅ Return Driver._id (not DriverSignup._id)
+        id: driverSignup._id,
         username: driverSignup.username,
         mobile: driverSignup.mobile,
         registrationCompleted: driverSignup.registrationCompleted || false,
