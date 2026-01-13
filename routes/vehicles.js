@@ -784,6 +784,71 @@ router.put('/:id', async (req, res) => {
         } catch (err) {
           console.warn('Failed to auto-activate vehicle after assignment:', err.message);
         }
+
+        // Send notification to driver about vehicle assignment
+        try {
+          const { createAndEmitNotification } = await import('../lib/notify.js');
+          
+          // Convert driverSignupId to Driver._id for FCM notification
+          let driverRecipientId = String(assignedDriverSignupId || '');
+          
+          if (assignedDriverSignupId) {
+            try {
+              const driverSignup = await DriverSignup.findById(assignedDriverSignupId).lean();
+              if (driverSignup && driverSignup.mobile) {
+                const driver = await Driver.findOne({ mobile: driverSignup.mobile }).lean();
+                if (driver && driver._id) {
+                  driverRecipientId = String(driver._id);
+                  console.log(`[VEHICLE ASSIGNMENT] Using Driver._id ${driverRecipientId} for notification (from driverSignupId ${assignedDriverSignupId})`);
+                }
+              }
+            } catch (lookupErr) {
+              console.warn('[VEHICLE ASSIGNMENT] Driver lookup failed:', lookupErr.message);
+            }
+          }
+
+          if (driverRecipientId && assignedVehicleInfo) {
+            const vehicleDisplay = assignedVehicleInfo.registrationNumber || 
+                                   `${assignedVehicleInfo.brand} ${assignedVehicleInfo.model}`.trim() || 
+                                   `Vehicle #${assignedVehicleInfo.vehicleId}`;
+            
+            // Notify driver
+            await createAndEmitNotification({
+              type: 'vehicle_assigned',
+              title: 'Vehicle Assigned to You!',
+              message: `${vehicleDisplay} has been assigned to you. Rent calculation starts now.`,
+              data: {
+                vehicleId: assignedVehicleInfo.vehicleId,
+                registrationNumber: assignedVehicleInfo.registrationNumber,
+                model: assignedVehicleInfo.model,
+                brand: assignedVehicleInfo.brand,
+                assignedAt: new Date().toISOString()
+              },
+              recipientType: 'driver',
+              recipientId: driverRecipientId
+            });
+            
+            // Also notify admins
+            await createAndEmitNotification({
+              type: 'vehicle_assignment_admin',
+              title: `Vehicle assigned to driver`,
+              message: `${vehicleDisplay} assigned to ${assignedDriverName || 'driver'}`,
+              data: {
+                vehicleId: assignedVehicleInfo.vehicleId,
+                driverName: assignedDriverName,
+                registrationNumber: assignedVehicleInfo.registrationNumber
+              },
+              recipientType: 'admin',
+              recipientId: null
+            });
+            
+            console.log(`✅ Vehicle assignment notification sent to driver ${driverRecipientId} for vehicle ${vehicleId}`);
+          } else {
+            console.log('⚠️ Skipping vehicle assignment notification - missing driver or vehicle info');
+          }
+        } catch (notifyErr) {
+          console.warn('Failed to send vehicle assignment notification:', notifyErr.message);
+        }
       } catch (err) {
         console.error('Error updating driver plan selections for new driver assignment:', err);
       }
