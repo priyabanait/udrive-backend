@@ -220,20 +220,30 @@ router.post("/signup-otp", async (req, res) => {
 
 router.post("/login-otp", async (req, res) => {
   try {
-    const { mobile, otp } = req.body;
-    if (!mobile || !otp) {
-      return res.status(400).json({ message: "Mobile and OTP required." });
+    const { mobile, username, otp } = req.body;
+    
+    // Either mobile or username must be provided along with otp
+    if ((!mobile && !username) || !otp) {
+      return res.status(400).json({ message: "Mobile or username and OTP required." });
     }
 
-    // Find driver signup by mobile
-    const driverSignup = await DriverSignup.findOne({ mobile });
-    if (!driverSignup) {
-      return res.status(401).json({ message: "Invalid mobile number or OTP." });
+    // Find driver signup by mobile or username
+    let driverSignup;
+    if (mobile) {
+      driverSignup = await DriverSignup.findOne({ mobile });
+      if (!driverSignup) {
+        return res.status(401).json({ message: "Invalid mobile number or OTP." });
+      }
+    } else if (username) {
+      driverSignup = await DriverSignup.findOne({ username });
+      if (!driverSignup) {
+        return res.status(401).json({ message: "Invalid username or OTP." });
+      }
     }
 
     // Verify OTP matches the password stored during signup (plain text comparison)
     if (driverSignup.password !== otp) {
-      return res.status(401).json({ message: "Invalid mobile number or OTP." });
+      return res.status(401).json({ message: "Invalid OTP." });
     }
 
     // Generate JWT token
