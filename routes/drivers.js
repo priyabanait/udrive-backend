@@ -2,6 +2,15 @@ import express from "express";
 import multer from "multer";
 import xlsx from "xlsx";
 import Driver from "../models/driver.js";
+import DriverEnrollment from "../models/driverEnrollment.js";
+import DriverWallet from "../models/driverWallet.js";
+import DriverWalletMessage from "../models/driverWalletMessage.js";
+import DriverPlanSelection from "../models/driverPlanSelection.js";
+import DeviceToken from "../models/deviceToken.js";
+import Transaction from "../models/transaction.js";
+import Ticket from "../models/ticket.js";
+import Expense from "../models/expense.js";
+import Notification from "../models/notification.js";
 // auth middleware not applied; token used only for login
 import { uploadToCloudinary } from "../lib/cloudinary.js";
 import { normalizeToDateOnly } from "../lib/dateUtils.js";
@@ -38,6 +47,30 @@ router.delete("/signup/credentials/:id", async (req, res) => {
     if (!deleted) {
       return res.status(404).json({ message: "Driver signup not found" });
     }
+    
+    // Cascade delete all related driver data
+    const driverId = deleted._id.toString();
+    const driverMobile = deleted.mobile;
+    
+    // Delete enrollments
+    await DriverEnrollment.deleteMany({ driverId });
+    // Delete wallet records
+    await DriverWallet.deleteMany({ phone: driverMobile });
+    // Delete wallet messages
+    await DriverWalletMessage.deleteMany({ phone: driverMobile });
+    // Delete plan selections
+    await DriverPlanSelection.deleteMany({ driverId });
+    // Delete device tokens
+    await DeviceToken.deleteMany({ userId: driverId, userType: 'driver' });
+    // Delete transactions
+    await Transaction.deleteMany({ $or: [{ driverId }, { driverId: deleted.id }] });
+    // Delete tickets
+    await Ticket.deleteMany({ driverId: deleted.id });
+    // Delete expenses
+    await Expense.deleteMany({ $or: [{ driverId }, { driverId: deleted.id }] });
+    // Delete notifications
+    await Notification.deleteMany({ recipientId: driverId, recipientType: 'driver' });
+    
     res.json({ message: "Driver signup deleted", driver: deleted });
   } catch (err) {
     console.error("Error deleting driver signup:", err);
@@ -1187,6 +1220,30 @@ router.delete("/:id", async (req, res) => {
     if (!deleted) {
       return res.status(404).json({ message: "Driver not found" });
     }
+    
+    // Cascade delete all related driver data
+    const driverId = deleted._id.toString();
+    const driverMobile = deleted.mobile;
+    
+    // Delete enrollments
+    await DriverEnrollment.deleteMany({ driverId });
+    // Delete wallet records
+    await DriverWallet.deleteMany({ phone: driverMobile });
+    // Delete wallet messages
+    await DriverWalletMessage.deleteMany({ phone: driverMobile });
+    // Delete plan selections
+    await DriverPlanSelection.deleteMany({ driverId });
+    // Delete device tokens
+    await DeviceToken.deleteMany({ userId: driverId, userType: 'driver' });
+    // Delete transactions
+    await Transaction.deleteMany({ $or: [{ driverId }, { driverId: deleted.id }] });
+    // Delete tickets
+    await Ticket.deleteMany({ driverId: deleted.id });
+    // Delete expenses
+    await Expense.deleteMany({ $or: [{ driverId }, { driverId: deleted.id }] });
+    // Delete notifications
+    await Notification.deleteMany({ recipientId: driverId, recipientType: 'driver' });
+    
     res.json({ message: "Deleted", driver: deleted });
   } catch (err) {
     console.error("Driver delete error:", err);
