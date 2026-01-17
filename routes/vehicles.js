@@ -1195,20 +1195,6 @@ router.put('/:id', async (req, res) => {
             if (driver.username) driverUsernames.push(driver.username);
             if (driver._id) driverSignupIds.push(driver._id);
           }
-          
-          // Also check DriverSignup collection by username/mobile
-          const driverSignup = await DriverSignup.findOne({
-            $or: [
-              { username: assignedDriver },
-              { mobile: assignedDriver }
-            ]
-          }).lean();
-          
-          if (driverSignup) {
-            if (driverSignup.mobile) driverMobiles.push(driverSignup.mobile);
-            if (driverSignup.username) driverUsernames.push(driverSignup.username);
-            if (driverSignup._id) driverSignupIds.push(driverSignup._id);
-          }
         }
         
         // Update plan selections by vehicleId OR by driver mobile/username (use regex to handle formatting differences)
@@ -1233,11 +1219,11 @@ router.put('/:id', async (req, res) => {
           updateQuery.$or.push({ driverUsername: new RegExp(`^${esc}$`, 'i') });
         }
 
-        // If we have collected signup IDs, use them too (include ObjectId or string representations)
+        // If we have collected driver IDs, use them too
         if (driverSignupIds && driverSignupIds.length > 0) {
-          updateQuery.$or.push({ driverSignupId: { $in: driverSignupIds } });
-          updateQuery.$or.push({ driverSignupId: { $in: driverSignupIds.map(x => x.toString()) } });
-          console.log('(inactivation) Collected driverSignupIds:', driverSignupIds.map(x => String(x)));
+          updateQuery.$or.push({ driverId: { $in: driverSignupIds } });
+          updateQuery.$or.push({ driverId: { $in: driverSignupIds.map(x => x.toString()) } });
+          console.log('(inactivation) Collected driverIds:', driverSignupIds.map(x => String(x)));
         }
 
         // Debug: log the query we're running for inactivation
@@ -1320,10 +1306,10 @@ router.put('/:id', async (req, res) => {
             model: assignedVehicleInfo.model,
             brand: assignedVehicleInfo.brand
           },
-          recipientType: 'driver_signup',
+          recipientType: 'driver',
           recipientId: String(assignedDriverSignupId)
         });
-        console.log(`✅ Notification sent to driver signup ${assignedDriverSignupId} for vehicle assignment ${assignedVehicleInfo.vehicleId}`);
+        console.log(`✅ Notification sent to driver ${assignedDriverSignupId} for vehicle assignment ${assignedVehicleInfo.vehicleId}`);
       } catch (notifyErr) {
         console.warn('Failed to send vehicle assignment notification:', notifyErr.message);
       }
