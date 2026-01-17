@@ -2,7 +2,6 @@ import express from "express";
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
 import Driver from "../models/driver.js";
-import DriverSignup from "../models/driverSignup.js";
 import { authenticateToken } from "./middleware.js";
 
 dotenv.config();
@@ -20,14 +19,14 @@ router.post("/signup", async (req, res) => {
         .json({ message: "Username, mobile and password required." });
     }
 
-    // Check for duplicate username in DriverSignup collection
-    const existingUsername = await DriverSignup.findOne({ username });
+    // Check for duplicate username in Driver collection
+    const existingUsername = await Driver.findOne({ username });
     if (existingUsername) {
       return res.status(400).json({ message: "Username already exists." });
     }
 
-    // Check for duplicate mobile in DriverSignup collection
-    const existingMobile = await DriverSignup.findOne({ mobile });
+    // Check for duplicate mobile in Driver collection
+    const existingMobile = await Driver.findOne({ mobile });
     if (existingMobile) {
       return res
         .status(400)
@@ -35,7 +34,7 @@ router.post("/signup", async (req, res) => {
     }
 
     // Create new driver signup (password stored in plain text)
-    const driverSignup = new DriverSignup({
+    const driverSignup = new Driver({
       username,
       mobile,
       password,
@@ -150,8 +149,8 @@ router.post("/signup-otp", async (req, res) => {
       return res.status(400).json({ message: "Mobile and OTP required." });
     }
 
-    // Check for duplicate mobile in DriverSignup collection
-    const existingMobile = await DriverSignup.findOne({ mobile });
+    // Check for duplicate mobile in Driver collection
+    const existingMobile = await Driver.findOne({ mobile });
     if (existingMobile) {
       return res
         .status(400)
@@ -159,7 +158,7 @@ router.post("/signup-otp", async (req, res) => {
     }
 
     // Create new driver signup with OTP as password (plain text)
-    const driverSignup = new DriverSignup({
+    const driverSignup = new Driver({
       username: username || undefined,
       mobile,
       password: otp,
