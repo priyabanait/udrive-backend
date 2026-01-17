@@ -180,7 +180,8 @@ router.get("/search", async (req, res) => {
       state
     } = req.query;
 
-    const filter = {};
+    // Filter to only show drivers with completed registration AND with a name
+    const filter = { registrationCompleted: true, name: { $exists: true, $ne: null, $ne: '' } };
 
     // General search across multiple fields
     if (q && q.trim()) {
@@ -306,7 +307,11 @@ router.get("/all", async (req, res) => {
     const sortOrder = req.query.sortOrder === "asc" ? 1 : -1;
 
     const manualOnly = req.query.manualOnly === "true";
-    const filter = manualOnly ? { isManualEntry: true } : {};
+    // Filter to only show drivers with completed registration AND with a name
+    const filter = { registrationCompleted: true, name: { $exists: true, $ne: null, $ne: '' } };
+    if (manualOnly) {
+      filter.isManualEntry = true;
+    }
 
     const total = await Driver.countDocuments(filter);
 
@@ -369,7 +374,11 @@ router.get("/", async (req, res) => {
     const sortOrder = req.query.sortOrder === "asc" ? 1 : -1;
 
     const manualOnly = req.query.manualOnly === "true";
-    const filter = manualOnly ? { isManualEntry: true } : {};
+    // Filter to only show drivers with completed registration AND with a name
+    const filter = { registrationCompleted: true, name: { $exists: true, $ne: null, $ne: '' } };
+    if (manualOnly) {
+      filter.isManualEntry = true;
+    }
 
     // Add search support to main GET endpoint
     if (req.query.q && req.query.q.trim()) {
