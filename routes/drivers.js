@@ -307,16 +307,19 @@ router.get("/all", async (req, res) => {
     const sortOrder = req.query.sortOrder === "asc" ? 1 : -1;
 
     const manualOnly = req.query.manualOnly === "true";
-    // Filter to only show drivers with completed registration AND with a name
-    const filter = { registrationCompleted: true, name: { $exists: true, $ne: null, $ne: '' } };
+
+    // ✅ UPDATED FILTER (registrationCompleted removed)
+    const filter = {
+      name: { $exists: true, $ne: null, $ne: "" }
+    };
+
     if (manualOnly) {
       filter.isManualEntry = true;
     }
 
     const total = await Driver.countDocuments(filter);
 
-    let query = Driver.find(filter)
-      .sort({ [sortBy]: sortOrder });
+    let query = Driver.find(filter).sort({ [sortBy]: sortOrder });
 
     if (!unlimited) {
       query = query.skip(skip).limit(limit);
@@ -357,6 +360,7 @@ router.get("/all", async (req, res) => {
   }
 });
 
+
 router.get("/", async (req, res) => {
   try {
     // Enforce pagination - no unlimited option to prevent loading all data
@@ -367,25 +371,28 @@ router.get("/", async (req, res) => {
 
     // Ensure limit is between MIN and MAX
     const limit = Math.min(Math.max(requestedLimit, MIN_LIMIT), MAX_LIMIT);
-
     const skip = (page - 1) * limit;
 
     const sortBy = req.query.sortBy || "createdAt";
     const sortOrder = req.query.sortOrder === "asc" ? 1 : -1;
 
     const manualOnly = req.query.manualOnly === "true";
-    // Filter to only show drivers with completed registration AND with a name
-    const filter = { registrationCompleted: true, name: { $exists: true, $ne: null, $ne: '' } };
+
+    // ✅ UPDATED FILTER (registrationCompleted removed)
+    const filter = {
+      name: { $exists: true, $ne: null, $ne: "" }
+    };
+
     if (manualOnly) {
       filter.isManualEntry = true;
     }
 
-    // Add search support to main GET endpoint
+    // Search support
     if (req.query.q && req.query.q.trim()) {
-      const searchRegex = new RegExp(req.query.q.trim(), 'i');
-      const normalized = String(req.query.q).replace(/\D/g, '').trim();
+      const searchRegex = new RegExp(req.query.q.trim(), "i");
+      const normalized = String(req.query.q).replace(/\D/g, "").trim();
       const last10 = normalized.slice(-10);
-      
+
       const searchFilter = {
         $or: [
           { name: searchRegex },
@@ -396,16 +403,17 @@ router.get("/", async (req, res) => {
           { employeeId: searchRegex }
         ]
       };
-      
+
       if (normalized) {
         searchFilter.$or.push({ mobile: normalized });
         searchFilter.$or.push({ phone: normalized });
+
         if (last10.length >= 6) {
           searchFilter.$or.push({ mobile: { $regex: `${last10}$` } });
           searchFilter.$or.push({ phone: { $regex: `${last10}$` } });
         }
       }
-      
+
       filter.$and = filter.$and || [];
       filter.$and.push(searchFilter);
     }
@@ -447,17 +455,21 @@ router.get("/", async (req, res) => {
 });
 
 
+
+
 // GET signup drivers (self-registered with username/mobile/password)
 router.get("/signup/credentials", async (req, res) => {
   try {
     // Pagination parameters
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
+    const requestedLimit = parseInt(req.query.limit) || 10;
+    const MAX_LIMIT = 5000; // Increased max limit to show all drivers
+    const limit = Math.min(requestedLimit, MAX_LIMIT);
     const skip = (page - 1) * limit;
     const sortBy = req.query.sortBy || "signupDate";
     const sortOrder = req.query.sortOrder === "asc" ? 1 : -1;
 
-    // Add search support
+    // Add search support - NO filter for registrationCompleted, show all drivers
     const filter = {};
     if (req.query.q && req.query.q.trim()) {
       const searchRegex = new RegExp(req.query.q.trim(), 'i');
