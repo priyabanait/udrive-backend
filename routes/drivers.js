@@ -513,13 +513,36 @@ router.get("/signup/credentials", async (req, res) => {
   }
 });
 
+import mongoose from "mongoose";
+
 router.get("/:id", async (req, res) => {
-  const id = Number(req.params.id);
-  const item = await Driver.findOne({ id }).lean();
-  if (!item) return res.status(404).json({ message: "Driver not found" });
-  item.joinDate = normalizeToDateOnly(item.joinDate) || (item.createdAt ? new Date(item.createdAt).toISOString().split('T')[0] : undefined);
-  res.json(item);
+  try {
+    const { id } = req.params;
+
+    // ✅ Validate ObjectId
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid driver ID" });
+    }
+
+    const item = await Driver.findById(id).lean();
+
+    if (!item) {
+      return res.status(404).json({ message: "Driver not found" });
+    }
+
+    item.joinDate =
+      normalizeToDateOnly(item.joinDate) ||
+      (item.createdAt
+        ? new Date(item.createdAt).toISOString().split("T")[0]
+        : undefined);
+
+    res.json(item);
+  } catch (error) {
+    console.error("Error fetching driver details:", error);
+    res.status(500).json({ message: "Failed to fetch driver details" });
+  }
 });
+
 
 // Return the next UDB number to use (e.g., { next: 31, nextUdb: 'UDB0031' })
 router.get('/udb/next', async (req, res) => {
@@ -1220,57 +1243,75 @@ router.put("/:id", async (req, res) => {
 
 router.delete("/:id", async (req, res) => {
   try {
-    const paramId = req.params.id;
-    
-    // Try to find by MongoDB _id first, then by numeric id
-    let query;
-    if (paramId.match(/^[0-9a-fA-F]{24}$/)) {
-      // Valid MongoDB ObjectId
-      query = { _id: paramId };
+    const { id } = req.params;
+
+    let deleted;
+
+    // Prefer MongoDB _id
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      deleted = await Driver.findByIdAndDelete(id);
     } else {
-      // Try as numeric id
-      const numId = Number(paramId);
-      if (!isNaN(numId)) {
-        query = { id: numId };
-      } else {
+      // fallback for legacy numeric id
+      const numId = Number(id);
+      if (isNaN(numId)) {
         return res.status(400).json({ message: "Invalid driver ID format" });
       }
+      deleted = await Driver.findOneAndDelete({ id: numId });
     }
-    
-    const deleted = await Driver.findOneAndDelete(query);
+
     if (!deleted) {
       return res.status(404).json({ message: "Driver not found" });
     }
-    
-    // Cascade delete all related driver data
-    const driverId = deleted._id.toString();
-    const driverMobile = deleted.mobile;
-    
-    // Delete enrollments
-    await DriverEnrollment.deleteMany({ driverId });
-    // Delete wallet records
-    await DriverWallet.deleteMany({ phone: driverMobile });
-    // Delete wallet messages
-    await DriverWalletMessage.deleteMany({ phone: driverMobile });
-    // Delete plan selections
-    await DriverPlanSelection.deleteMany({ driverId });
-    // Delete device tokens
-    await DeviceToken.deleteMany({ userId: driverId, userType: 'driver' });
-    // Delete transactions
-    await Transaction.deleteMany({ $or: [{ driverId }, { driverId: deleted.id }] });
-    // Delete tickets
-    await Ticket.deleteMany({ driverId: deleted.id });
-    // Delete expenses
-    await Expense.deleteMany({ $or: [{ driverId }, { driverId: deleted.id }] });
-    // Delete notifications
-    await Notification.deleteMany({ recipientId: driverId, recipientType: 'driver' });
-    
-    res.json({ message: "Deleted", driver: deleted });
+
+    const mongoDriverId = deleted._id.toString();
+    const numericDriverId = deleted.id; // ⚠️ VERY IMPORTANT
+    const mobile = deleted.mobile;
+
+    const deletes = [];
+
+    // Uses Mongo ObjectId (string)
+    deletes.push(
+      DriverEnrollment.deleteMany({ driverId: mongoDriverId }),
+      DriverPlanSelection.deleteMany({ driverId: mongoDriverId }),
+      DeviceToken.deleteMany({ userId: mongoDriverId, userType: "driver" }),
+      Notification.deleteMany({
+        recipientId: mongoDriverId,
+        recipientType: "driver",
+      })
+    );
+
+    // Uses mobile number
+    if (mobile) {
+      deletes.push(
+        DriverWallet.deleteMany({ phone: mobile }),
+        DriverWalletMessage.deleteMany({ phone: mobile })
+      );
+    }
+
+    // Uses NUMERIC driverId
+    if (typeof numericDriverId === "number") {
+      deletes.push(
+        Transaction.deleteMany({ driverId: numericDriverId }),
+        Ticket.deleteMany({ driverId: numericDriverId }),
+        Expense.deleteMany({ driverId: numericDriverId })
+      );
+    }
+
+    await Promise.all(deletes);
+
+    res.json({
+      message: "Driver deleted successfully",
+      driver: deleted,
+    });
   } catch (err) {
     console.error("Driver delete error:", err);
-    res.status(500).json({ message: "Failed to delete driver", error: err.message });
+    res.status(500).json({
+      message: "Failed to delete driver",
+      error: err.message,
+    });
   }
 });
+
 
 // GET driver earnings summary
 router.get("/earnings/summary", async (req, res) => {
