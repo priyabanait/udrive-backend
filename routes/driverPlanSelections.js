@@ -18,17 +18,34 @@ const SECRET = process.env.JWT_SECRET || "dev_secret";
 function calculatePaymentDetails(selection) {
   // Calculate days (inclusive)
   let days = 0;
-  if (selection.rentStartDate) {
-    const start = new Date(selection.rentStartDate);
+
+  // Prefer explicit rentStartDate when present
+  let effectiveStart = selection.rentStartDate
+    ? new Date(selection.rentStartDate)
+    : null;
+
+  // Fallback: if no rentStartDate but plan is active and a vehicle
+  // is already linked, treat the selection date as start of rent.
+  // This ensures "days" starts once a vehicle is assigned, even if
+  // rentStartDate wasn't persisted for some reason.
+  if (!effectiveStart && selection.status === "active" && selection.vehicleId) {
+    if (selection.selectedDate) {
+      effectiveStart = new Date(selection.selectedDate);
+    } else if (selection.createdAt) {
+      effectiveStart = new Date(selection.createdAt);
+    }
+  }
+
+  if (effectiveStart) {
     let end = new Date();
     if (selection.status === "inactive" && selection.rentPausedDate) {
       end = new Date(selection.rentPausedDate);
     }
     // Normalize to midnight for both dates
     const startMidnight = new Date(
-      start.getFullYear(),
-      start.getMonth(),
-      start.getDate()
+      effectiveStart.getFullYear(),
+      effectiveStart.getMonth(),
+      effectiveStart.getDate()
     );
     const endMidnight = new Date(
       end.getFullYear(),
@@ -1335,10 +1352,18 @@ router.post("/:id/online-payment", async (req, res) => {
       gateway,
     } = req.body;
 
-    if (!amount || !paymentId) {
+    // Basic validation: require a paymentId and a positive numeric amount.
+    if (!paymentId) {
       return res
         .status(400)
-        .json({ message: "Payment ID and amount are required" });
+        .json({ success: false, message: "Payment ID is required" });
+    }
+
+    const newPayment = Number(amount);
+    if (Number.isNaN(newPayment) || newPayment <= 0) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Amount must be a positive number" });
     }
 
     const id = req.params.id;
@@ -1368,7 +1393,6 @@ router.post("/:id/online-payment", async (req, res) => {
 
     // Add to existing paid amount (cumulative)
     const previousAmount = selection.paidAmount || 0;
-    const newPayment = Number(amount);
     selection.paidAmount = previousAmount + newPayment;
 
     // Initialize driverPayments array if it doesn't exist
