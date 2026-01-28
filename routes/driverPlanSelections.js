@@ -1350,6 +1350,9 @@ router.post("/:id/online-payment", async (req, res) => {
       merchantOrderId,
       paymentToken,
       gateway,
+      // Optional granular breakdown from client (ZwitchPaymentModal)
+      depositAmount,
+      rentAmount,
     } = req.body;
 
     // Basic validation: require a paymentId and a positive numeric amount.
@@ -1382,6 +1385,8 @@ router.post("/:id/online-payment", async (req, res) => {
       currentPaidAmount: selection.paidAmount,
       newAmount: amount,
       paymentType: paymentType,
+      depositAmount,
+      rentAmount,
     });
 
     // Update payment details
@@ -1389,11 +1394,49 @@ router.post("/:id/online-payment", async (req, res) => {
     selection.paymentMethod = gateway || "ZWITCH";
     selection.paymentStatus = status === "captured" ? "completed" : "pending";
     selection.paymentDate = new Date();
-    selection.paymentType = paymentType || "rent";
+    // Only store "rent" or "security" in the top-level field to satisfy schema enum
+    let safePaymentType = paymentType === "security" ? "security" : "rent";
+    selection.paymentType = safePaymentType;
 
-    // Add to existing paid amount (cumulative)
+    // Add to existing paid amount (cumulative, regardless of breakdown)
     const previousAmount = selection.paidAmount || 0;
     selection.paidAmount = previousAmount + newPayment;
+
+    // Determine how much of this payment goes to deposit vs rent (and other components)
+    let depositPaidNow = 0;
+    let rentPaidNow = 0;
+
+    const parsedDepositAmount = Number(depositAmount);
+    const parsedRentAmount = Number(rentAmount);
+
+    if (!Number.isNaN(parsedDepositAmount) && parsedDepositAmount > 0) {
+      depositPaidNow = parsedDepositAmount;
+    }
+    if (!Number.isNaN(parsedRentAmount) && parsedRentAmount > 0) {
+      rentPaidNow = parsedRentAmount;
+    }
+
+    // If client didn't send explicit split, infer from (safe) payment type
+    if (depositPaidNow === 0 && rentPaidNow === 0) {
+      if (safePaymentType === "security") {
+        depositPaidNow = newPayment;
+      } else {
+        // Treat as rent payment by default
+        rentPaidNow = newPayment;
+      }
+    } else {
+      // Ensure the split does not exceed total paid; if it does, normalise proportionally
+      const splitTotal = depositPaidNow + rentPaidNow;
+      if (splitTotal > 0 && splitTotal !== newPayment) {
+        const scale = newPayment / splitTotal;
+        depositPaidNow = Number((depositPaidNow * scale).toFixed(2));
+        rentPaidNow = Number((rentPaidNow * scale).toFixed(2));
+      }
+    }
+
+    // Update cumulative tracked fields used by calculatePaymentDetails/paymentDetails
+    selection.depositPaid = (selection.depositPaid || 0) + depositPaidNow;
+    selection.rentPaid = (selection.rentPaid || 0) + rentPaidNow;
 
     // Initialize driverPayments array if it doesn't exist
     if (!selection.driverPayments) {
@@ -1405,7 +1448,11 @@ router.post("/:id/online-payment", async (req, res) => {
       date: new Date(),
       amount: newPayment,
       mode: "online",
-      type: paymentType || "rent",
+      // Store more specific driver payment type; allow "deposit" for reporting if this was only a deposit
+      type:
+        safePaymentType === "security" && rentPaidNow === 0
+          ? "deposit"
+          : safePaymentType,
       transactionId: paymentId,
       merchantOrderId: merchantOrderId,
       paymentToken: paymentToken,
