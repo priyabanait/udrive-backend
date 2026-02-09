@@ -1241,10 +1241,8 @@ router.post("/:id/confirm-payment", async (req, res) => {
 
     console.log("Current payment status:", selection.paymentStatus);
 
-    if (selection.paymentStatus === "completed") {
-      return res.status(400).json({ message: "Payment already completed" });
-    }
-
+    // IMPORTANT: Always process and accumulate payments, regardless of current paymentStatus
+    // Multiple payments should be recorded, not rejected
     selection.paymentMode = paymentMode;
     selection.paymentStatus = "completed";
     selection.paymentDate = new Date();
@@ -1255,6 +1253,28 @@ router.post("/:id/confirm-payment", async (req, res) => {
       const newPayment = Number(paidAmount);
       selection.paidAmount = previousAmount + newPayment;
       selection.paymentType = paymentType || "rent";
+      
+      // Initialize driverPayments array if it doesn't exist
+      if (!selection.driverPayments) {
+        selection.driverPayments = [];
+      }
+
+      // Add payment record to array for tracking multiple payments
+      selection.driverPayments.push({
+        date: new Date(),
+        amount: newPayment,
+        mode: paymentMode,
+        type: paymentType || "rent",
+        status: "completed"
+      });
+      
+      // Track in depositPaid/rentPaid for proper calculation
+      if (paymentType === "security") {
+        selection.depositPaid = (selection.depositPaid || 0) + newPayment;
+      } else if (paymentType === "rent") {
+        selection.rentPaid = (selection.rentPaid || 0) + newPayment;
+      }
+      
       console.log(
         "Adding payment:",
         newPayment,
@@ -1263,7 +1283,9 @@ router.post("/:id/confirm-payment", async (req, res) => {
         "New Total:",
         selection.paidAmount,
         "Type:",
-        selection.paymentType
+        selection.paymentType,
+        "Tracked payments:",
+        selection.driverPayments.length
       );
     }
 

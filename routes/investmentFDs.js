@@ -747,9 +747,8 @@ router.post("/:id/confirm-payment", async (req, res) => {
 
     console.log("Current investment payment status:", investment.paymentStatus);
 
-    if (investment.paymentStatus === "paid") {
-      return res.status(400).json({ error: "Payment already completed" });
-    }
+    // IMPORTANT: Always process and accumulate payments, regardless of current paymentStatus
+    // Multiple payments should be recorded, not rejected
 
     // Map incoming short values (online/cash) to schema enum values
     const mapping = { online: "Online", cash: "Cash" };
@@ -767,6 +766,18 @@ router.post("/:id/confirm-payment", async (req, res) => {
     investment.paymentMode = mapping[normalized];
     investment.paymentStatus = "paid";
     investment.paymentDate = new Date();
+
+    // Initialize investorPayments array if it doesn't exist (for tracking multiple payments)
+    if (!investment.investorPayments) {
+      investment.investorPayments = [];
+    }
+
+    // Add payment record to array for tracking multiple payments
+    investment.investorPayments.push({
+      date: new Date(),
+      mode: mapping[normalized],
+      status: "paid"
+    });
 
     // Support optional tdsPercent in confirm-payment (server calculates tdsAmount)
     if (req.body.tdsPercent !== undefined) {
