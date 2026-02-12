@@ -1309,34 +1309,42 @@ router.post("/:id/confirm-payment", async (req, res) => {
       const { createAndEmitNotification } = await import("../lib/notify.js");
       const paymentAmount = paidAmount || updatedSelection.paidAmount || 0;
       // Try to find Driver document to use its _id for notifications (device tokens are registered with Driver._id)
-      let recipientId = String(updatedSelection.driverSignupId || "");
+      let recipientId = null;
       if (updatedSelection.driverSignupId) {
-        const driverSignup = await DriverSignup.findById(updatedSelection.driverSignupId).lean();
-        if (driverSignup && driverSignup.mobile) {
-          const driver = await Driver.findOne({ mobile: driverSignup.mobile }).lean();
-          if (driver) {
-            recipientId = String(driver._id);
-            console.log(`[NOTIFY] Using Driver._id ${recipientId} for notification (from driverSignupId ${updatedSelection.driverSignupId})`);
+        try {
+          const driverSignup = await DriverSignup.findById(updatedSelection.driverSignupId).lean();
+          if (driverSignup && driverSignup.mobile) {
+            const driver = await Driver.findOne({ mobile: driverSignup.mobile }).lean();
+            if (driver && driver._id) {
+              recipientId = String(driver._id);
+              console.log(`[NOTIFY] Using Driver._id ${recipientId} for notification (from driverSignupId ${updatedSelection.driverSignupId})`);
+            }
           }
+        } catch (lookupErr) {
+          console.warn(`[NOTIFY] Failed to lookup Driver from driverSignupId: ${lookupErr.message}`);
         }
       }
-      // Notify driver
-      await createAndEmitNotification({
-        type: "driver_payment",
-        title: `Payment received: ₹${paymentAmount.toLocaleString("en-IN")}`,
-        message: `Payment of ₹${paymentAmount.toLocaleString(
-          "en-IN"
-        )} received from you via ${updatedSelection.paymentMode || "cash"}`,
-        data: {
-          selectionId: updatedSelection._id,
-          driverSignupId: String(updatedSelection.driverSignupId || ""),
-          amount: paymentAmount,
-          paymentType: paymentType || "rent",
-          paymentMode: updatedSelection.paymentMode || "cash",
-        },
-        recipientType: "driver",
-        recipientId: recipientId,
-      });
+      // Only notify the specific driver if we found a valid driver ID
+      if (recipientId) {
+        await createAndEmitNotification({
+          type: "driver_payment",
+          title: `Payment received: ₹${paymentAmount.toLocaleString("en-IN")}`,
+          message: `Payment of ₹${paymentAmount.toLocaleString(
+            "en-IN"
+          )} received from you via ${updatedSelection.paymentMode || "cash"}`,
+          data: {
+            selectionId: updatedSelection._id,
+            driverSignupId: String(updatedSelection.driverSignupId || ""),
+            amount: paymentAmount,
+            paymentType: paymentType || "rent",
+            paymentMode: updatedSelection.paymentMode || "cash",
+          },
+          recipientType: "driver",
+          recipientId: recipientId,
+        });
+      } else {
+        console.warn(`[NOTIFY] Could not find valid driver ID for payment notification - skipping driver notification to prevent broadcast to all drivers`);
+      }
       // Also notify admins globally
       await createAndEmitNotification({
         type: "driver_payment_admin",
@@ -1517,34 +1525,42 @@ router.post("/:id/online-payment", async (req, res) => {
     try {
       const { createAndEmitNotification } = await import("../lib/notify.js");
       // Try to find Driver document to use its _id for notifications (device tokens are registered with Driver._id)
-      let recipientId = String(selection.driverSignupId || "");
+      let recipientId = null;
       if (selection.driverSignupId) {
-        const driverSignup = await DriverSignup.findById(selection.driverSignupId).lean();
-        if (driverSignup && driverSignup.mobile) {
-          const driver = await Driver.findOne({ mobile: driverSignup.mobile }).lean();
-          if (driver) {
-            recipientId = String(driver._id);
-            console.log(`[NOTIFY] Using Driver._id ${recipientId} for notification (from driverSignupId ${selection.driverSignupId})`);
+        try {
+          const driverSignup = await DriverSignup.findById(selection.driverSignupId).lean();
+          if (driverSignup && driverSignup.mobile) {
+            const driver = await Driver.findOne({ mobile: driverSignup.mobile }).lean();
+            if (driver && driver._id) {
+              recipientId = String(driver._id);
+              console.log(`[NOTIFY] Using Driver._id ${recipientId} for notification (from driverSignupId ${selection.driverSignupId})`);
+            }
           }
+        } catch (lookupErr) {
+          console.warn(`[NOTIFY] Failed to lookup Driver from driverSignupId: ${lookupErr.message}`);
         }
       }
-      // Notify driver
-      await createAndEmitNotification({
-        type: "driver_payment",
-        title: `Payment received: ₹${newPayment.toLocaleString("en-IN")}`,
-        message: `Payment of ₹${newPayment.toLocaleString(
-          "en-IN"
-        )} received from you via ${gateway || "ZWITCH"}`,
-        data: {
-          selectionId: updatedSelection._id,
-          driverSignupId: String(selection.driverSignupId || ""),
-          amount: newPayment,
-          paymentType: paymentType || "rent",
-          paymentMode: "online",
-        },
-        recipientType: "driver",
-        recipientId: recipientId,
-      });
+      // Only notify the specific driver if we found a valid driver ID
+      if (recipientId) {
+        await createAndEmitNotification({
+          type: "driver_payment",
+          title: `Payment received: ₹${newPayment.toLocaleString("en-IN")}`,
+          message: `Payment of ₹${newPayment.toLocaleString(
+            "en-IN"
+          )} received from you via ${gateway || "ZWITCH"}`,
+          data: {
+            selectionId: updatedSelection._id,
+            driverSignupId: String(selection.driverSignupId || ""),
+            amount: newPayment,
+            paymentType: paymentType || "rent",
+            paymentMode: "online",
+          },
+          recipientType: "driver",
+          recipientId: recipientId,
+        });
+      } else {
+        console.warn(`[NOTIFY] Could not find valid driver ID for payment notification - skipping driver notification to prevent broadcast to all drivers`);
+      }
       // Also notify admins globally
       await createAndEmitNotification({
         type: "driver_payment_admin",
