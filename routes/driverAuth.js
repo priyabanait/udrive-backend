@@ -100,9 +100,9 @@ router.post("/signup", async (req, res) => {
     // Generate JWT token
     const token = jwt.sign(
       {
-        id: String(driverSignup._id),
+        id: driverSignup._id,
         username: driverSignup.username,
-        mobile: driverSignup.mobile || driverSignup.phone || '',
+        mobile: driverSignup.mobile,
         type: "driver",
       },
       SECRET,
@@ -113,9 +113,9 @@ router.post("/signup", async (req, res) => {
       message: "Signup successful.",
       token,
       driver: {
-        id: String(driverSignup._id),
+        id: driverSignup._id,
         username: driverSignup.username,
-        mobile: driverSignup.mobile || driverSignup.phone || '',
+        mobile: driverSignup.mobile,
         registrationCompleted: driverSignup.registrationCompleted || false,
       },
     });
@@ -146,14 +146,12 @@ router.post("/login", async (req, res) => {
       return res.status(401).json({ message: "Invalid credentials." });
     }
 
-    const normalizedMobile = driver.mobile || driver.phone || '';
-
     // Generate JWT token
     const token = jwt.sign(
       {
-        id: String(driver._id),
+        id: driver._id,
         username: driver.username,
-        mobile: normalizedMobile,
+        mobile: driver.mobile,
         type: "driver",
       },
       SECRET,
@@ -164,9 +162,9 @@ router.post("/login", async (req, res) => {
       message: "Login successful.",
       token,
       driver: {
-        id: String(driver._id),
+        id: driver._id,
         username: driver.username,
-        mobile: normalizedMobile,
+        mobile: driver.mobile,
       },
     });
   } catch (error) {
@@ -223,14 +221,12 @@ router.post("/signup-otp", async (req, res) => {
       console.warn("Notify failed:", err.message);
     }
 
-    // Normalize mobile (fallback to phone) and generate JWT token
-    const signupMobile = driverSignup.mobile || driverSignup.phone || '';
-
+    // Generate JWT token
     const token = jwt.sign(
       {
-        id: String(driverSignup._id),
+        id: driverSignup._id,
         username: driverSignup.username,
-        mobile: signupMobile,
+        mobile: driverSignup.mobile,
         type: "driver",
       },
       SECRET,
@@ -241,9 +237,9 @@ router.post("/signup-otp", async (req, res) => {
       message: "Signup successful.",
       token,
       driver: {
-        id: String(driverSignup._id),
+        id: driverSignup._id,
         username: driverSignup.username,
-        mobile: signupMobile,
+        mobile: driverSignup.mobile,
         registrationCompleted: driverSignup.registrationCompleted || false,
       },
     });
@@ -281,14 +277,12 @@ router.post("/login-otp", async (req, res) => {
       return res.status(401).json({ message: "Invalid OTP." });
     }
 
-    const normalizedLoginMobile = driver.mobile || driver.phone || '';
-
     // Generate JWT token
     const token = jwt.sign(
       {
-        id: String(driver._id),
+        id: driver._id,
         username: driver.username,
-        mobile: normalizedLoginMobile,
+        mobile: driver.mobile,
         type: "driver",
       },
       SECRET,
@@ -299,9 +293,9 @@ router.post("/login-otp", async (req, res) => {
       message: "Login successful.",
       token,
       driver: {
-        id: String(driver._id),
+        id: driver._id,
         username: driver.username,
-        mobile: normalizedLoginMobile,
+        mobile: driver.mobile,
         registrationCompleted: driver.registrationCompleted || false,
       },
     });
