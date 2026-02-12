@@ -292,6 +292,11 @@ router.patch("/:id", async (req, res) => {
         selection.paymentDate = new Date();
       }
 
+      // Set paymentMode to 'cash' for admin recorded payments
+      if (!selection.paymentMode || selection.paymentMode === '') {
+        selection.paymentMode = 'cash';
+      }
+
       console.log("Admin payment recorded:", {
         selectionId: selection._id,
         paymentAmount,
@@ -305,6 +310,7 @@ router.patch("/:id", async (req, res) => {
         totalRentPaid: selection.rentPaid,
         totalExtraAmountPaid: selection.extraAmountPaid,
         totalAccidentalCoverPaid: selection.accidentalCoverPaid,
+        paymentMode: selection.paymentMode,
       });
     }
 

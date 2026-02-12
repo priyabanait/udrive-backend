@@ -750,10 +750,16 @@ router.post('/zwitch/callback', async (req, res) => {
             });
 
             await planSelection.save();
+            
+            // Calculate total from array for verification
+            const totalFromArray = planSelection.driverPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+            
             console.log('✅ Driver plan selection updated with online payment:', {
               planSelectionId,
-              amount: newPayment,
-              totalPaid: planSelection.paidAmount,
+              newPayment: newPayment,
+              cumulativePaidAmount: planSelection.paidAmount,
+              totalFromDriverPaymentsArray: totalFromArray,
+              driverPaymentsCount: planSelection.driverPayments.length,
               paymentType: paymentType
             });
 
