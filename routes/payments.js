@@ -563,21 +563,13 @@ router.post('/zwitch/callback', async (req, res) => {
     const {
       merchant_order_id,
       payment_token,
-      status, // 'captured', 'failed', 'cancelled', 'success', 'SUCCESS', 'COMPLETED', etc.
+      status, // 'captured', 'failed', 'cancelled'
       payment_id,
       amount,
       udf1: driverId,
       udf2: planSelectionId,
-      udf3: paymentType,
-      payment_method, // Track which payment method (PhonePay, GooglePay, UPI, CRED, Card, etc.)
-      method, // Alternative field name for payment method
-      gateway_method // Another alternative
+      udf3: paymentType
     } = req.body;
-
-    // Determine payment method used
-    const paymentMethod = payment_method || method || gateway_method || 'Unknown';
-    console.log(`💳 Payment Method Used: ${paymentMethod}`);
-    console.log('Payment callback status value received:', status);
 
     // Find transaction by merchant_order_id
     const transaction = await Transaction.findOne({
@@ -595,26 +587,8 @@ router.post('/zwitch/callback', async (req, res) => {
     // Check if this is an investor or driver payment
     const isInvestorPayment = transaction.metadata?.investmentId || transaction.metadata?.carInvestmentId;
 
-    // Normalize status to handle different payment gateway responses
-    // UPI/Scanner sends 'captured', PhonePay/GooglePay might send 'success', 'SUCCESS', 'COMPLETED', etc.
-    const normalizedStatus = status?.toString().toLowerCase();
-    const isSuccessfulPayment = ['captured', 'success', 'completed', 'approved'].includes(normalizedStatus);
-    const isFailedPayment = ['failed', 'decline', 'declined', 'error'].includes(normalizedStatus);
-    const isCancelledPayment = ['cancelled', 'cancel', 'aborted'].includes(normalizedStatus);
-
-    console.log('✅ Payment Processing:', { 
-      paymentMethod,
-      originalStatus: status, 
-      normalizedStatus, 
-      isSuccessful: isSuccessfulPayment,
-      isFailed: isFailedPayment,
-      isCancelled: isCancelledPayment,
-      amount,
-      merchantOrderId: merchant_order_id
-    });
-
     // Update transaction based on payment status
-    if (isSuccessfulPayment) {
+    if (status === 'captured') {
       transaction.status = 'completed';
       transaction.gatewayTransactionId = payment_id;
       transaction.metadata = {
@@ -666,17 +640,15 @@ router.post('/zwitch/callback', async (req, res) => {
               merchantOrderId: merchant_order_id,
               paymentToken: payment_token,
               gateway: 'ZWITCH',
-              paymentMethod: paymentMethod || 'ZWITCH',
               status: status,
               investmentId: transaction.metadata?.investmentId
             });
 
             await wallet.save();
-            console.log('✅ Investor wallet updated with online payment via ' + paymentMethod + ':', {
+            console.log('✅ Investor wallet updated with online payment:', {
               investorId: transaction.investorId,
               amount: paymentAmount,
               newBalance: wallet.balance,
-              paymentMethod: paymentMethod,
               paymentType: transaction.metadata?.paymentType
             });
 
@@ -714,9 +686,9 @@ router.post('/zwitch/callback', async (req, res) => {
                     if (targetInvestorId) {
                       await createAndEmitNotification({
                         type: 'investment_payment_received',
-                        title: `Payment received via ${paymentMethod}: ₹${investment.investmentAmount}`,
-                        message: `Your payment of ₹${investment.investmentAmount} for FD has been received via ${paymentMethod}.`,
-                        data: { id: investment._id, investmentId: String(investment._id), paymentMethod },
+                        title: `Payment received: ₹${investment.investmentAmount}`,
+                        message: `Your payment of ₹${investment.investmentAmount} for FD has been received.`,
+                        data: { id: investment._id, investmentId: String(investment._id) },
                         recipientType: 'investor',
                         recipientId: String(targetInvestorId)
                       });
@@ -774,7 +746,6 @@ router.post('/zwitch/callback', async (req, res) => {
               merchantOrderId: merchant_order_id,
               paymentToken: payment_token,
               gateway: 'ZWITCH',
-              paymentMethod: paymentMethod || 'ZWITCH',
               status: status
             });
 
@@ -783,13 +754,12 @@ router.post('/zwitch/callback', async (req, res) => {
             // Calculate total from array for verification
             const totalFromArray = planSelection.driverPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
             
-            console.log('✅ Driver plan selection updated with online payment via ' + paymentMethod + ':', {
+            console.log('✅ Driver plan selection updated with online payment:', {
               planSelectionId,
               newPayment: newPayment,
               cumulativePaidAmount: planSelection.paidAmount,
               totalFromDriverPaymentsArray: totalFromArray,
               driverPaymentsCount: planSelection.driverPayments.length,
-              paymentMethod: paymentMethod,
               paymentType: paymentType
             });
 
@@ -809,16 +779,15 @@ router.post('/zwitch/callback', async (req, res) => {
               if (actualDriverId) {
                 await createAndEmitNotification({
                   type: 'driver_payment',
-                  title: `Driver payment received via ${paymentMethod}: ₹${newPayment.toLocaleString('en-IN')}`,
-                  message: `Payment of ₹${newPayment.toLocaleString('en-IN')} received from driver ${planSelection.driverUsername || planSelection.driverMobile || 'N/A'} via ${paymentMethod}`,
+                  title: `Driver payment received: ₹${newPayment.toLocaleString('en-IN')}`,
+                  message: `Payment of ₹${newPayment.toLocaleString('en-IN')} received from driver ${planSelection.driverUsername || planSelection.driverMobile || 'N/A'} via ZWITCH`,
                   data: { 
                     selectionId: planSelection._id, 
                     driverId: actualDriverId,
                     amount: newPayment,
                     paymentType: paymentType || 'rent',
                     paymentMode: 'online',
-                    transactionId: payment_id,
-                    paymentMethod: paymentMethod
+                    transactionId: payment_id
                   },
                   recipientType: 'driver',
                   recipientId: actualDriverId
@@ -837,69 +806,30 @@ router.post('/zwitch/callback', async (req, res) => {
           // Don't fail the webhook if plan update fails
         }
       }
-    } else if (isFailedPayment) {
+    } else if (status === 'failed') {
       transaction.status = 'failed';
       transaction.metadata = {
         ...transaction.metadata,
         failureReason: req.body.failure_reason || 'Payment failed',
         callbackData: req.body
       };
-      console.log('❌ Payment marked as failed:', { transactionId: transaction._id, status, reason: req.body.failure_reason });
-    } else if (isCancelledPayment) {
+    } else if (status === 'cancelled') {
       transaction.status = 'cancelled';
       transaction.metadata = {
         ...transaction.metadata,
         cancelledAt: new Date(),
         callbackData: req.body
       };
-      console.log('⚠️ Payment marked as cancelled:', { transactionId: transaction._id, status });
-    } else {
-      // Unknown status - log it for debugging
-      console.warn('⚠️ Unknown payment status received:', { 
-        status,
-        normalizedStatus,
-        fullCallback: req.body 
-      });
-      transaction.metadata = {
-        ...transaction.metadata,
-        unknownStatus: status,
-        callbackData: req.body
-      };
     }
 
     await transaction.save();
 
-    const statusMessage = isSuccessfulPayment ? 'completed' : isFailedPayment ? 'failed' : isCancelledPayment ? 'cancelled' : 'unknown';
-    
-    if (isSuccessfulPayment) {
-      console.log(`✅ ✅ PAYMENT SUCCESS via ${paymentMethod || 'Payment Gateway'}:`, {
-        transactionId: transaction._id,
-        status,
-        amount,
-        merchantOrderId: merchant_order_id,
-        paymentId: payment_id
-      });
-    } else if (isFailedPayment) {
-      console.log(`❌ PAYMENT FAILED via ${paymentMethod || 'Payment Gateway'}:`, {
-        transactionId: transaction._id,
-        status,
-        amount,
-        reason: req.body.failure_reason
-      });
-    } else if (isCancelledPayment) {
-      console.log(`⚠️ PAYMENT CANCELLED via ${paymentMethod || 'Payment Gateway'}:`, {
-        transactionId: transaction._id,
-        status,
-        amount
-      });
-    }
+    console.log(`Payment ${status} for transaction:`, transaction._id);
 
     res.json({
-      success: isSuccessfulPayment,
-      message: `Payment ${statusMessage}`,
-      transactionId: transaction._id,
-      transactionStatus: transaction.status,
-      paymentMethod: paymentMethod
+      success: true,
+      message: `Payment ${status}`,
+      transactionId: transaction._id
     });
 
   } catch (error) {
