@@ -1271,7 +1271,7 @@ router.post("/:id/confirm-payment", async (req, res) => {
         amount: newPayment,
         mode: paymentMode,
         type: paymentType || "rent",
-        status: "completed"
+        status: "captured"
       });
       
       // Track in depositPaid/rentPaid for proper calculation
