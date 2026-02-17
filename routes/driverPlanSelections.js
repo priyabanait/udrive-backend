@@ -1785,4 +1785,134 @@ router.delete("/:id", async (req, res) => {
   }
 });
 
+// POST - Webhook endpoint for Zwitch payment gateway callbacks
+// This endpoint receives payment status updates directly from Zwitch
+router.post("/payment-webhook/zwitch", async (req, res) => {
+  try {
+    console.log("Zwitch webhook received:", {
+      body: req.body,
+      headers: req.headers,
+    });
+
+    const {
+      payment_id,
+      payment_token_id,
+      status,
+      amount,
+      merchant_order_id,
+      customer_email,
+      customer_mobile,
+    } = req.body;
+
+    // Acknowledge receipt immediately
+    res.status(200).json({ success: true, message: "Webhook received" });
+
+    // Process the payment asynchronously
+    if (!payment_id || !status) {
+      console.warn("Webhook missing required fields:", req.body);
+      return;
+    }
+
+    // Extract planSelectionId from merchant_order_id or payment metadata
+    let planSelectionId = merchant_order_id;
+    
+    // If merchant_order_id doesn't look like a valid ObjectId, try to find it another way
+    if (!mongoose.Types.ObjectId.isValid(planSelectionId)) {
+      console.warn("Invalid planSelectionId in webhook:", planSelectionId);
+      return;
+    }
+
+    const selection = await DriverPlanSelection.findById(planSelectionId);
+    if (!selection) {
+      console.warn("Plan selection not found for webhook:", planSelectionId);
+      return;
+    }
+
+    // Only update if payment is captured/successful
+    if (status === "captured" || status === "success") {
+      console.log("Processing successful webhook payment for:", planSelectionId);
+
+      selection.paymentMode = "online";
+      selection.paymentMethod = "ZWITCH";
+      selection.paymentStatus = "completed";
+      selection.paymentDate = new Date();
+      
+      const paymentAmount = Number(amount) || 0;
+      const previousAmount = selection.paidAmount || 0;
+      selection.paidAmount = previousAmount + paymentAmount;
+
+      // Initialize driverPayments array if it doesn't exist
+      if (!selection.driverPayments) {
+        selection.driverPayments = [];
+      }
+
+      // Add payment record
+      selection.driverPayments.push({
+        date: new Date(),
+        amount: paymentAmount,
+        mode: "online",
+        type: "security", // Default to security, can be adjusted
+        status: "captured",
+        paymentId: payment_id,
+        tokenId: payment_token_id,
+      });
+
+      // Update security deposit tracking
+      selection.depositPaid = (selection.depositPaid || 0) + paymentAmount;
+
+      await selection.save();
+
+      console.log("Webhook payment processed successfully:", {
+        planSelectionId,
+        paymentId: payment_id,
+        amount: paymentAmount,
+      });
+
+      // Send notification
+      try {
+        const { createAndEmitNotification } = await import("../lib/notify.js");
+        
+        // Try to find Driver document for notifications
+        let recipientId = null;
+        if (selection.driverSignupId) {
+          try {
+            const DriverSignup = (await import("../models/driverEnrollment.js")).default;
+            const driverSignup = await DriverSignup.findById(selection.driverSignupId).lean();
+            if (driverSignup && driverSignup.mobile) {
+              const driver = await Driver.findOne({ mobile: driverSignup.mobile }).lean();
+              if (driver && driver._id) {
+                recipientId = String(driver._id);
+              }
+            }
+          } catch (lookupErr) {
+            console.warn(`Webhook notification lookup failed: ${lookupErr.message}`);
+          }
+        }
+
+        if (recipientId) {
+          await createAndEmitNotification({
+            type: "driver_payment",
+            title: `Payment Successful: ₹${paymentAmount.toLocaleString("en-IN")}`,
+            message: `Your payment of ₹${paymentAmount.toLocaleString("en-IN")} has been confirmed.`,
+            data: {
+              selectionId: selection._id,
+              paymentId: payment_id,
+              amount: paymentAmount,
+            },
+            recipientType: "driver",
+            recipientId: recipientId,
+          });
+        }
+      } catch (notifyErr) {
+        console.warn("Webhook notification failed:", notifyErr.message);
+      }
+    } else {
+      console.log(`Webhook status "${status}" - no action taken for:`, planSelectionId);
+    }
+  } catch (error) {
+    console.error("Error processing Zwitch webhook:", error);
+    // Don't send error response as we already acknowledged receipt
+  }
+});
+
 export default router;
