@@ -841,11 +841,11 @@ router.post("/admin/send-specific", async (req, res) => {
 });
 
 /**
- * Send notification-only push to a driver by mobile number
+ * Send notification-only push to a driver by mobile number or username
  * POST /api/notifications/send-driver-by-mobile
  * Body:
  * {
- *   mobile: '9999999999',
+ *   mobile: '9999999999' or 'username',
  *   title: 'Title',
  *   message: 'Message',
  *   save: boolean (optional, default false)
@@ -859,11 +859,17 @@ router.post("/send-driver-by-mobile", async (req, res) => {
       return res.status(400).json({ message: "title or message is required" });
 
     const normalized = String(mobile).trim();
-    const driver = await Driver.findOne({ mobile: normalized }).lean();
+    const driver = await Driver.findOne({ 
+      $or: [
+        { mobile: normalized },
+        { phone: normalized },
+        { username: normalized }
+      ]
+    }).lean();
     if (!driver)
       return res
         .status(404)
-        .json({ message: "Driver not found for given mobile" });
+        .json({ message: "Driver not found for given mobile or username" });
 
     const tokens = await DeviceToken.find({
       userType: "driver",
@@ -926,11 +932,11 @@ router.post("/send-driver-by-mobile", async (req, res) => {
 });
 
 /**
- * Send notification-only push to an investor by mobile number
+ * Send notification-only push to an investor by mobile number or username
  * POST /api/notifications/send-investor-by-mobile
  * Body:
  * {
- *   mobile: '9999999999',
+ *   mobile: '9999999999' or 'username',
  *   title: 'Title',
  *   message: 'Message',
  *   save: boolean (optional, default false)
@@ -944,11 +950,16 @@ router.post("/send-investor-by-mobile", async (req, res) => {
       return res.status(400).json({ message: "title or message is required" });
 
     const normalized = String(mobile).trim();
-    const investor = await Investor.findOne({ phone: normalized }).lean();
+    const investor = await Investor.findOne({ 
+      $or: [
+        { phone: normalized },
+        { username: normalized }
+      ]
+    }).lean();
     if (!investor)
       return res
         .status(404)
-        .json({ message: "Investor not found for given mobile" });
+        .json({ message: "Investor not found for given mobile or username" });
 
     const tokens = await DeviceToken.find({
       userType: "investor",
@@ -1012,8 +1023,8 @@ router.post("/send-investor-by-mobile", async (req, res) => {
 });
 
 /**
- * Get notifications for a driver by mobile number
- * GET /api/notifications/by-driver-mobile?mobile=9999999999
+ * Get notifications for a driver by mobile number or username
+ * GET /api/notifications/by-driver-mobile?mobile=9999999999 or ?mobile=username
  */
 router.get("/by-driver-mobile", async (req, res) => {
   try {
@@ -1024,11 +1035,17 @@ router.get("/by-driver-mobile", async (req, res) => {
         .json({ message: "mobile query parameter is required" });
 
     const normalized = String(mobile).trim();
-    const driver = await Driver.findOne({ mobile: normalized }).lean();
+    const driver = await Driver.findOne({ 
+      $or: [
+        { mobile: normalized },
+        { phone: normalized },
+        { username: normalized }
+      ]
+    }).lean();
     if (!driver)
       return res
         .status(404)
-        .json({ message: "Driver not found for given mobile" });
+        .json({ message: "Driver not found for given mobile or username" });
 
     const page = parseInt(req.query.page) || 1;
     const limit = Math.min(parseInt(req.query.limit) || 20, 100);
@@ -1055,8 +1072,8 @@ router.get("/by-driver-mobile", async (req, res) => {
 });
 
 /**
- * Get notifications for an investor by mobile number
- * GET /api/notifications/by-investor-mobile?mobile=9999999999
+ * Get notifications for an investor by mobile number or username
+ * GET /api/notifications/by-investor-mobile?mobile=9999999999 or ?mobile=username
  */
 router.get("/by-investor-mobile", async (req, res) => {
   try {
@@ -1067,11 +1084,16 @@ router.get("/by-investor-mobile", async (req, res) => {
         .json({ message: "mobile query parameter is required" });
 
     const normalized = String(mobile).trim();
-    const investor = await Investor.findOne({ phone: normalized }).lean();
+    const investor = await Investor.findOne({ 
+      $or: [
+        { phone: normalized },
+        { username: normalized }
+      ]
+    }).lean();
     if (!investor)
       return res
         .status(404)
-        .json({ message: "Investor not found for given mobile" });
+        .json({ message: "Investor not found for given mobile or username" });
 
     const page = parseInt(req.query.page) || 1;
     const limit = Math.min(parseInt(req.query.limit) || 20, 100);

@@ -42,7 +42,7 @@ router.post('/', async (req, res) => {
 
 // Register driver token by mobile
 // POST /api/deviceTokens/register-driver-by-mobile
-// body: { mobile, token, platform }
+// body: { mobile, token, platform } - mobile can be phone number or username
 router.post('/register-driver-by-mobile', async (req, res) => {
   try {
     const { mobile, token, platform } = req.body || {};
@@ -50,15 +50,21 @@ router.post('/register-driver-by-mobile', async (req, res) => {
     if (!token) return res.status(400).json({ error: 'token is required' });
 
     const normalized = String(mobile).trim();
-    console.log('[DeviceToken] register-driver-by-mobile: searching for driver with mobile:', normalized);
+    console.log('[DeviceToken] register-driver-by-mobile: searching for driver with mobile/username:', normalized);
     
-    const driver = await Driver.findOne({ mobile: normalized }).lean();
+    const driver = await Driver.findOne({ 
+      $or: [
+        { mobile: normalized },
+        { phone: normalized },
+        { username: normalized }
+      ]
+    }).lean();
     if (!driver) {
-      console.error('[DeviceToken] register-driver-by-mobile: Driver not found. Mobile:', normalized);
+      console.error('[DeviceToken] register-driver-by-mobile: Driver not found. Mobile/Username:', normalized);
       // Also check if any drivers exist at all
       const totalDrivers = await Driver.countDocuments({});
       console.error('[DeviceToken] Total drivers in database:', totalDrivers);
-      return res.status(404).json({ error: 'Driver not found for given mobile' });
+      return res.status(404).json({ error: 'Driver not found for given mobile or username' });
     }
 
     // Log previous mapping for visibility
@@ -87,9 +93,9 @@ router.post('/register-driver-by-mobile', async (req, res) => {
   }
 });
 
-// Register investor token by mobile
+// Register investor token by mobile or username
 // POST /api/deviceTokens/register-investor-by-mobile
-// body: { mobile, token, platform }
+// body: { mobile, token, platform } - mobile can be phone number or username
 router.post('/register-investor-by-mobile', async (req, res) => {
   try {
     const { mobile, token, platform } = req.body || {};
@@ -97,8 +103,13 @@ router.post('/register-investor-by-mobile', async (req, res) => {
     if (!token) return res.status(400).json({ error: 'token is required' });
 
     const normalized = String(mobile).trim();
-    const investor = await Investor.findOne({ phone: normalized }).lean();
-    if (!investor) return res.status(404).json({ error: 'Investor not found for given mobile' });
+    const investor = await Investor.findOne({ 
+      $or: [
+        { phone: normalized },
+        { username: normalized }
+      ]
+    }).lean();
+    if (!investor) return res.status(404).json({ error: 'Investor not found for given mobile or username' });
 
     // Log previous mapping for visibility
     const prev = await DeviceToken.findOne({ token }).lean();

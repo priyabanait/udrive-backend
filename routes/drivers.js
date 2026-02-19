@@ -79,11 +79,17 @@ router.delete("/signup/credentials/:id", async (req, res) => {
       .json({ message: "Failed to delete driver signup", error: err.message });
   }
 });
-// GET driver form data by mobile number
+// GET driver form data by mobile number or username
 router.get("/form/mobile/:phone", async (req, res) => {
   try {
     const { phone } = req.params;
-    const driver = await Driver.findOne({ phone }).lean();
+    const driver = await Driver.findOne({ 
+      $or: [
+        { phone },
+        { mobile: phone },
+        { username: phone }
+      ]
+    }).lean();
     if (!driver) {
       return res.status(404).json({ error: "Driver not found" });
     }

@@ -25,11 +25,21 @@ router.post('/', async (req, res) => {
   }
 });
 
-// GET: Get wallet by phone number
+// GET: Get wallet by phone number or username
 router.get('/:phone', async (req, res) => {
   try {
     const { phone } = req.params;
-    const wallet = await InvestorWallet.findOne({ phone });
+    // Try to find investor first by phone/username
+    const investor = await Investor.findOne({ 
+      $or: [
+        { phone },
+        { username: phone }
+      ]
+    }).lean();
+    
+    // Use investor's phone if found, otherwise use input as phone
+    const searchPhone = investor ? investor.phone : phone;
+    const wallet = await InvestorWallet.findOne({ phone: searchPhone });
     if (!wallet) {
       return res.status(404).json({ error: 'Wallet not found' });
     }

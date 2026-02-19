@@ -23,11 +23,22 @@ router.post('/', async (req, res) => {
   }
 });
 
-// GET: Get wallet by phone number
+// GET: Get wallet by phone number or username
 router.get('/:phone', async (req, res) => {
   try {
     const { phone } = req.params;
-    const wallet = await DriverWallet.findOne({ phone });
+    // Try to find driver first by phone/username to get mobile
+    const driver = await Driver.findOne({ 
+      $or: [
+        { phone },
+        { mobile: phone },
+        { username: phone }
+      ]
+    }).lean();
+    
+    // Use driver's mobile if found, otherwise use input as phone
+    const searchMobile = driver ? driver.mobile : phone;
+    const wallet = await DriverWallet.findOne({ phone: searchMobile });
     if (!wallet) {
       return res.status(404).json({ error: 'Wallet not found' });
     }

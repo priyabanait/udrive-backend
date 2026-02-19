@@ -11,11 +11,16 @@ dotenv.config();
 const SECRET = process.env.JWT_SECRET || "dev_secret";
 
 const router = express.Router();
-// GET investor form data by mobile number
+// GET investor form data by mobile number or username
 router.get("/form/mobile/:phone", async (req, res) => {
   try {
     const { phone } = req.params;
-    const investor = await Investor.findOne({ phone }).lean();
+    const investor = await Investor.findOne({ 
+      $or: [
+        { phone },
+        { username: phone }
+      ]
+    }).lean();
     if (!investor) {
       return res.status(404).json({ error: "Investor not found" });
     }

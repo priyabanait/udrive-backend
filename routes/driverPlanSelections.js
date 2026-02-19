@@ -826,11 +826,17 @@ router.get("/", async (req, res) => {
 });
 
 
-// Get all plan selections by driver mobile number
+// Get all plan selections by driver mobile number or username
 router.get("/by-mobile/:mobile", async (req, res) => {
   try {
-    const mobile = req.params.mobile;
-    const selections = await DriverPlanSelection.find({ driverMobile: mobile })
+    const identifier = req.params.mobile;
+    // Query to find selections by either mobile number or username
+    const selections = await DriverPlanSelection.find({ 
+      $or: [
+        { driverMobile: identifier },
+        { driverUsername: identifier }
+      ]
+    })
       .sort({ selectedDate: -1 })
       .lean();
     // Ensure each selection includes a `paymentDetails` object (compute if missing)
@@ -841,8 +847,8 @@ router.get("/by-mobile/:mobile", async (req, res) => {
 
     res.json(selectionsWithDetails);
   } catch (err) {
-    console.error("Get plans by mobile error:", err);
-    res.status(500).json({ message: "Failed to load plans for this mobile" });
+    console.error("Get plans by mobile/username error:", err);
+    res.status(500).json({ message: "Failed to load plans for this mobile or username" });
   }
 });
 
